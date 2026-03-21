@@ -13,10 +13,14 @@ use crate::toml_storage::TomlStorage;
 #[command(version)]
 pub struct Args {
     /// Path to bookmarks file (overrides cwd and global)
-    #[arg(short = 'f', long = "bookmarks-file")]
+    #[arg(short = 'f', long = "bookmarks-file", conflicts_with = "global")]
     pub bookmarks_file: Option<PathBuf>,
 
-    /// Configure bookmarks
+    /// Use global config (~/.config/bookmarks/bookmarks.toml), ignore local
+    #[arg(short, long, conflicts_with = "bookmarks_file")]
+    pub global: bool,
+
+    /// Open active bookmarks file in $EDITOR (use -gc for global)
     #[arg(short, long)]
     pub config: bool,
 
@@ -36,9 +40,10 @@ pub struct Args {
 
 /// Resolve which bookmarks file to use and ensure it exists:
 /// 1. --bookmarks-file flag (explicit, must exist)
-/// 2. bookmarks.toml in cwd (local, must exist)
-/// 3. ~/.config/bookmarks/bookmarks.toml (global, auto-created)
-fn resolve_storage(bookmarks_file: Option<PathBuf>) -> Result<TomlStorage> {
+/// 2. --global flag (skip cwd, use global)
+/// 3. bookmarks.toml in cwd (local, must exist)
+/// 4. ~/.config/bookmarks/bookmarks.toml (global, auto-created)
+fn resolve_storage(bookmarks_file: Option<PathBuf>, global: bool) -> Result<TomlStorage> {
     if let Some(path) = bookmarks_file {
         anyhow::ensure!(
             path.exists(),
@@ -48,10 +53,12 @@ fn resolve_storage(bookmarks_file: Option<PathBuf>) -> Result<TomlStorage> {
         return Ok(TomlStorage::new(path));
     }
 
-    if let Some(cwd_path) = TomlStorage::cwd_path()
-        && cwd_path.exists()
-    {
-        return Ok(TomlStorage::new(cwd_path));
+    if !global {
+        if let Some(cwd_path) = TomlStorage::cwd_path()
+            && cwd_path.exists()
+        {
+            return Ok(TomlStorage::new(cwd_path));
+        }
     }
 
     let storage = TomlStorage::with_default_path()?;
@@ -66,7 +73,7 @@ where
 {
     let args = Args::parse_from(args);
 
-    let storage = resolve_storage(args.bookmarks_file)?;
+    let storage = resolve_storage(args.bookmarks_file, args.global)?;
 
     #[cfg(feature = "app")]
     if args.app {

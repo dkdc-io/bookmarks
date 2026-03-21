@@ -79,7 +79,8 @@ Available options:
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--bookmarks-file <PATH>` | `-f` | Use a specific bookmarks file |
-| `--config` | `-c` | Open configuration file in `$EDITOR` |
+| `--global` | `-g` | Use global config, ignore local bookmarks.toml |
+| `--config` | `-c` | Open active bookmarks file in `$EDITOR` (use `-gc` for global) |
 | `--app` | `-a` | Open desktop app (requires `app` feature) |
 | `--webapp` | `-w` | Open the web app in browser (requires `webapp` feature) |
 | `--help` | `-h` | Print help |
