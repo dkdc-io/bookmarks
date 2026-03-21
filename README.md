@@ -12,7 +12,7 @@ Bookmarks in your filesystem.
 uv (recommended):
 
 ```bash
-uv tool install dkdc-bookmarks
+uv tool install --from dkdc-bookmarks bookmarks
 ```
 
 cargo:
@@ -24,7 +24,7 @@ cargo install dkdc-bookmarks --features app,webapp
 You can use `uvx` to run it without installing:
 
 ```bash
-uvx dkdc-bookmarks
+uvx --from dkdc-bookmarks bookmarks
 ```
 
 ## Usage

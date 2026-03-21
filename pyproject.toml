@@ -1,6 +1,6 @@
 [project]
 name = "dkdc-bookmarks"
-version = "0.2.0"
+version = "0.2.1"
 description = "Bookmarks in your filesystem"
 authors = [{ name = "Cody", email = "cody@dkdc.dev" }]
 requires-python = ">=3.11"
