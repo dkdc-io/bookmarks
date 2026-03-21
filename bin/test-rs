@@ -2,4 +2,4 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-cargo test --manifest-path crates/bookmarks-cli/Cargo.toml --features app,webapp "$@"
+cargo test --workspace "$@"

@@ -1,6 +1,6 @@
 [project]
 name = "dkdc-bookmarks"
-version = "0.2.1"
+version = "0.3.0"
 description = "Bookmarks in your filesystem"
 authors = [{ name = "Cody", email = "cody@dkdc.dev" }]
 requires-python = ">=3.11"
@@ -28,6 +28,8 @@ build-backend = "maturin"
 [tool.uv]
 cache-keys = [
     { file = "pyproject.toml" },
+    { file = "crates/bookmarks-core/**/*.rs" },
     { file = "crates/bookmarks-cli/**/*.rs" },
     { file = "crates/bookmarks-py/**/*.rs" },
+    { file = "py/bookmarks/**/*.py" },
 ]

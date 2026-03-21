@@ -7,7 +7,7 @@ use axum::routing::{get, post};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use bookmarks_core::config::Config;
+use bookmarks_core::config::{Config, UrlEntry};
 use bookmarks_core::storage::Storage;
 use bookmarks_core::strings;
 
@@ -16,12 +16,16 @@ struct AppState {
 }
 
 impl AppState {
-    fn load_config(&self) -> Config {
-        self.storage.lock().unwrap().load().unwrap_or_default()
+    fn lock_storage(&self) -> std::sync::MutexGuard<'_, Box<dyn Storage>> {
+        self.storage.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn save_config(&self, config: &Config) {
-        let _ = self.storage.lock().unwrap().save(config);
+    fn load_config(&self) -> Config {
+        self.lock_storage().load().unwrap_or_default()
+    }
+
+    fn save_config(&self, config: &Config) -> Result<(), String> {
+        self.lock_storage().save(config).map_err(|e| e.to_string())
     }
 }
 
@@ -30,6 +34,14 @@ fn escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+fn escape_js(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('"', "&quot;")
+        .replace('<', "\\x3c")
+        .replace('>', "\\x3e")
 }
 
 // -- HTML rendering ----------------------------------------------------------
@@ -71,14 +83,11 @@ fn page(body: &str) -> String {
     td.name {{ color: #bf4dff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
     td.name a {{ color: #bf4dff; text-decoration: none; }}
     td.name a:hover {{ text-decoration: underline; }}
-    td.target a {{ color: #a640f2; text-decoration: none; }}
-    td.target a:hover {{ text-decoration: underline; color: #bf4dff; }}
-    td.entries a {{ color: #a640f2; text-decoration: none; }}
-    td.entries a:hover {{ text-decoration: underline; color: #bf4dff; }}
     td.url a {{ color: #22d3ee; text-decoration: none; word-break: break-all; }}
     td.url a:hover {{ text-decoration: underline; color: #67e8f9; }}
-    td.target {{ color: #a640f2; }}
-    td.entries {{ color: #a640f2; font-size: 0.8rem; }}
+    td.aliases {{ color: #a640f2; font-size: 0.8rem; }}
+    td.entries a {{ color: #a640f2; text-decoration: none; }}
+    td.entries a:hover {{ text-decoration: underline; color: #bf4dff; }}
     .actions {{ text-align: right; white-space: nowrap; }}
     .btn {{ background: none; border: 1px solid #2e2e47; color: #8c8ca6; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }}
     .btn:hover {{ border-color: #666680; color: #edeedf; }}
@@ -101,7 +110,6 @@ fn page(body: &str) -> String {
     .copy-btn.copied {{ color: #4ade80; }}
     td.url {{ }}
     td.url .url-cell {{ display: flex; align-items: center; gap: 6px; }}
-    td.target .target-cell {{ display: flex; align-items: center; gap: 6px; }}
     .error-banner {{ background: #3a1a2a; border: 1px solid #5c2a2a; color: #ff7373; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.8rem; cursor: pointer; }}
     .editable {{ cursor: pointer; }}
     .editable:hover {{ background: #2e2e47; border-radius: 3px; }}
@@ -225,12 +233,12 @@ fn page(body: &str) -> String {
     }}
     function submitEdit(type, name, field, value, cell, original) {{
       var params = new URLSearchParams();
-      if (field === 'name' || field === 'alias') params.append('new_name', value);
+      if (field === 'name') params.append('new_name', value);
       if (field === 'url') params.append('new_url', value);
-      if (field === 'target') params.append('new_target', value);
+      if (field === 'aliases') params.append('new_aliases', value);
       if (field === 'entries') params.append('new_entries', value);
       fetch('/edit/' + type + '/' + encodeURIComponent(name), {{method: 'POST', headers: {{'Content-Type': 'application/x-www-form-urlencoded'}}, body: params.toString()}})
-        .then(function(r) {{ return r.text(); }})
+        .then(function(r) {{ if (!r.ok) throw new Error(r.statusText); return r.text(); }})
         .then(function(html) {{ document.getElementById('content').innerHTML = html; }})
         .catch(function() {{ cell.innerHTML = original; }});
     }}
@@ -304,7 +312,7 @@ fn page(body: &str) -> String {
       }});
     }}
     function showTab(tab) {{
-      ['links','aliases','groups'].forEach(function(t) {{
+      ['urls','groups'].forEach(function(t) {{
         var el = document.getElementById('section-' + t);
         var btn = document.getElementById('tab-' + t);
         if (el) el.style.display = (t === tab || tab === 'all') ? '' : 'none';
@@ -327,13 +335,8 @@ fn page(body: &str) -> String {
     )
 }
 
-/// Resolve a name to a URL: check aliases first, then direct links.
 fn resolve_url<'a>(name: &str, config: &'a Config) -> Option<&'a str> {
-    if let Some(target) = config.aliases.get(name) {
-        config.links.get(target).map(String::as_str)
-    } else {
-        config.links.get(name).map(String::as_str)
-    }
+    bookmarks_core::open::resolve_uri(name, config).ok()
 }
 
 fn linked_name(name: &str, url: &str) -> String {
@@ -343,72 +346,59 @@ fn linked_name(name: &str, url: &str) -> String {
 }
 
 fn copy_btn(url: &str) -> String {
-    let u = escape(url);
+    let uj = escape_js(url);
     format!(
-        r##"<button class="copy-btn" onclick="copyUrl(this,'{u}')" title="copy to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>"##
+        r##"<button class="copy-btn" onclick="copyUrl(this,'{uj}')" title="copy to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>"##
     )
 }
 
-fn link_row(name: &str, url: &str) -> String {
+fn url_row(name: &str, entry: &UrlEntry) -> String {
     let n = escape(name);
+    let nj = escape_js(name);
+    let url = entry.url();
     let u = escape(url);
+    let uj = escape_js(url);
     let name_link = linked_name(name, url);
     let copy = copy_btn(url);
-    format!(
-        r##"<tr data-filter="{n} {u}">
-  <td class="check"><input type="checkbox" class="row-check" data-type="link" data-name="{n}" onchange="updateBulkBar()"></td>
-  <td class="name editable" ondblclick="startEdit('link','{n}','name','{n}')">{name_link}</td>
-  <td class="url editable" ondblclick="startEdit('link','{n}','url','{u}')"><span class="url-cell">{copy}<a href="{u}" target="_blank" rel="noopener">{u}</a></span></td>
-  <td class="actions">
-    <button class="btn btn-danger" onclick="deleteSingle('link','{n}')">delete</button>
-  </td>
-</tr>"##
-    )
-}
-
-fn alias_row(alias: &str, target: &str, config: &Config) -> String {
-    let a = escape(alias);
-    let t = escape(target);
-    let resolved = resolve_url(alias, config);
-    let name_cell = if let Some(url) = resolved {
+    let aliases = entry.aliases();
+    let aliases_raw = aliases.join(", ");
+    let aliases_raw_js = escape_js(&aliases_raw);
+    let aliases_html = if aliases.is_empty() {
+        r#"<span class="editable" style="color:#666680;font-size:0.8rem;font-style:italic">+ aliases</span>"#.to_string()
+    } else {
+        let escaped: Vec<String> = aliases.iter().map(|a| escape(a)).collect();
         format!(
-            r##"<a href="{u}" target="_blank" rel="noopener" title="{u}">{a}</a>"##,
-            u = escape(url)
+            r#"<span style="color:#a640f2;font-size:0.8rem">{}</span>"#,
+            escaped.join(", ")
         )
-    } else {
-        a.clone()
-    };
-    let copy_cell = resolved
-        .as_ref()
-        .map(|url| copy_btn(url))
-        .unwrap_or_default();
-    let target_cell = if let Some(url) = config.links.get(target) {
-        let u = escape(url);
-        format!(r##"<a href="{u}" target="_blank" rel="noopener" title="{u}">{t}</a>"##)
-    } else {
-        t.clone()
     };
     format!(
-        r##"<tr data-filter="{a} {t}">
-  <td class="check"><input type="checkbox" class="row-check" data-type="alias" data-name="{a}" onchange="updateBulkBar()"></td>
-  <td class="name editable" ondblclick="startEdit('alias','{a}','alias','{a}')">{name_cell}</td>
-  <td class="target editable" ondblclick="startEdit('alias','{a}','target','{t}')"><span class="target-cell">{copy_cell}{target_cell}</span></td>
+        r##"<tr data-filter="{n} {u} {aliases_filter}">
+  <td class="check"><input type="checkbox" class="row-check" data-type="url" data-name="{n}" onchange="updateBulkBar()"></td>
+  <td class="name editable" ondblclick="startEdit('url','{nj}','name','{nj}')">{name_link}</td>
+  <td class="url editable" ondblclick="startEdit('url','{nj}','url','{uj}')"><span class="url-cell">{copy}<a href="{u}" target="_blank" rel="noopener">{u}</a></span></td>
+  <td class="aliases editable" ondblclick="startEdit('url','{nj}','aliases','{aliases_raw_js}')">{aliases_html}</td>
   <td class="actions">
-    <button class="btn btn-danger" onclick="deleteSingle('alias','{a}')">delete</button>
+    <button class="btn btn-danger" onclick="deleteSingle('url','{nj}')">delete</button>
   </td>
-</tr>"##
+</tr>"##,
+        aliases_filter = escape(&aliases.join(" ")),
     )
 }
 
 fn group_row(name: &str, entries: &[String], config: &Config) -> String {
     let n = escape(name);
+    let nj = escape_js(name);
     // Collect resolved URLs for the "open all" action
     let urls: Vec<String> = entries
         .iter()
-        .filter_map(|entry| resolve_url(entry, config).map(escape))
+        .filter_map(|entry| resolve_url(entry, config).map(escape_js))
         .collect();
-    let urls_json: Vec<String> = urls.iter().map(|u| format!("'{u}'")).collect();
-    let urls_arr = urls_json.join(",");
+    let urls_arr: String = urls
+        .iter()
+        .map(|u| format!("'{u}'"))
+        .collect::<Vec<_>>()
+        .join(",");
 
     let entry_links: Vec<String> = entries
         .iter()
@@ -423,23 +413,27 @@ fn group_row(name: &str, entries: &[String], config: &Config) -> String {
         })
         .collect();
     let entries_html = entry_links.join(", ");
-    let filter_str = entries.join(", ");
+    let filter_str: String = entries
+        .iter()
+        .map(|e| escape(e))
+        .collect::<Vec<_>>()
+        .join(", ");
     let name_cell = if urls.is_empty() {
         n.clone()
     } else {
         format!(
-            r##"<a href="#" onclick="openGroup([{urls_arr}]);return false;" title="open all {count} links">{n}</a>"##,
+            r##"<a href="#" onclick="openGroup([{urls_arr}]);return false;" title="open all {count} urls">{n}</a>"##,
             count = urls.len()
         )
     };
-    let entries_raw = entries.join(", ");
+    let entries_raw_js = escape_js(&entries.join(", "));
     format!(
         r##"<tr data-filter="{n} {filter_str}">
   <td class="check"><input type="checkbox" class="row-check" data-type="group" data-name="{n}" onchange="updateBulkBar()"></td>
-  <td class="name editable" ondblclick="startEdit('group','{n}','name','{n}')">{name_cell}</td>
-  <td class="entries editable" ondblclick="startEdit('group','{n}','entries','{entries_raw}')">{entries_html}</td>
+  <td class="name editable" ondblclick="startEdit('group','{nj}','name','{nj}')">{name_cell}</td>
+  <td class="entries editable" ondblclick="startEdit('group','{nj}','entries','{entries_raw_js}')">{entries_html}</td>
   <td class="actions">
-    <button class="btn btn-danger" onclick="deleteSingle('group','{n}')">delete</button>
+    <button class="btn btn-danger" onclick="deleteSingle('group','{nj}')">delete</button>
   </td>
 </tr>"##
     )
@@ -452,19 +446,16 @@ enum SortField {
 }
 
 fn render_content(config: &Config, sort: SortField, error: Option<&str>) -> String {
-    let mut links: Vec<_> = config.links.iter().collect();
-    let mut aliases: Vec<_> = config.aliases.iter().collect();
+    let mut urls: Vec<_> = config.urls.iter().collect();
     let mut groups: Vec<_> = config.groups.iter().collect();
 
     match sort {
         SortField::Name => {
-            links.sort_by_key(|(k, _)| k.as_str());
-            aliases.sort_by_key(|(k, _)| k.as_str());
+            urls.sort_by_key(|(k, _)| k.as_str());
             groups.sort_by_key(|(k, _)| k.as_str());
         }
         SortField::Url => {
-            links.sort_by_key(|(_, v)| v.as_str());
-            aliases.sort_by_key(|(_, v)| v.as_str());
+            urls.sort_by_key(|(_, v)| v.url());
             groups.sort_by_key(|(k, _)| k.as_str());
         }
     }
@@ -488,14 +479,12 @@ fn render_content(config: &Config, sort: SortField, error: Option<&str>) -> Stri
   <input id="search" type="text" placeholder="{ph_filter}" oninput="filterRows()" autocomplete="off">
   <div class="tabs">
     <button id="tab-all" class="tab active" onclick="showTab('all')">all</button>
-    <button id="tab-links" class="tab" onclick="showTab('links')">links<span class="counts">{lc}</span></button>
-    <button id="tab-aliases" class="tab" onclick="showTab('aliases')">aliases<span class="counts">{ac}</span></button>
+    <button id="tab-urls" class="tab" onclick="showTab('urls')">urls<span class="counts">{uc}</span></button>
     <button id="tab-groups" class="tab" onclick="showTab('groups')">groups<span class="counts">{gc}</span></button>
   </div>
 </div>"##,
         ph_filter = strings::PH_FILTER,
-        lc = links.len(),
-        ac = aliases.len(),
+        uc = urls.len(),
         gc = groups.len(),
     ));
 
@@ -519,15 +508,10 @@ fn render_content(config: &Config, sort: SortField, error: Option<&str>) -> Stri
     // Add forms at the top
     html.push_str(&format!(
         r##"<div class="section">
-<form class="inline" hx-post="/add/link" hx-target="#content">
-  <input name="name" placeholder="{ph_link_name}" required>
-  <input name="url" placeholder="{ph_link_url}" required>
-  <button class="btn btn-add" type="submit">+ link</button>
-</form>
-<form class="inline" hx-post="/add/alias" hx-target="#content">
-  <input name="alias" placeholder="{ph_alias_name}" required>
-  <input name="target" placeholder="{ph_alias_target}" required>
-  <button class="btn btn-add" type="submit">+ alias</button>
+<form class="inline" hx-post="/add/url" hx-target="#content">
+  <input name="name" placeholder="{ph_url_name}" required>
+  <input name="url" placeholder="{ph_url}" required>
+  <button class="btn btn-add" type="submit">+ url</button>
 </form>
 <form class="inline" hx-post="/add/group" hx-target="#content">
   <input name="name" placeholder="{ph_group_name}" required>
@@ -535,39 +519,22 @@ fn render_content(config: &Config, sort: SortField, error: Option<&str>) -> Stri
   <button class="btn btn-add" type="submit">+ group</button>
 </form>
 </div>"##,
-        ph_link_name = strings::PH_LINK_NAME,
-        ph_link_url = strings::PH_LINK_URL,
-        ph_alias_name = strings::PH_ALIAS_NAME,
-        ph_alias_target = strings::PH_ALIAS_TARGET,
+        ph_url_name = strings::PH_URL_NAME,
+        ph_url = strings::PH_URL,
         ph_group_name = strings::PH_GROUP_NAME,
         ph_group_entries = strings::PH_GROUP_ENTRIES,
     ));
 
-    // Links section
-    html.push_str(r##"<div class="section" id="section-links"><h2>links</h2>"##);
-    if links.is_empty() {
-        html.push_str(r#"<p class="empty">no links yet</p>"#);
+    // Urls section
+    html.push_str(r##"<div class="section" id="section-urls"><h2>urls</h2>"##);
+    if urls.is_empty() {
+        html.push_str(r#"<p class="empty">no urls yet</p>"#);
     } else {
         html.push_str(&format!(
-            r##"<table><colgroup><col class="col-check"><col class="col-name"><col class="col-value"><col class="col-actions"></colgroup><tr><th class="check"><input type="checkbox" class="select-all" onchange="toggleAll(this)"></th><th class="sortable{name_cls}" hx-get="/content?sort=name" hx-target="#content">name</th><th class="sortable{url_cls}" hx-get="/content?sort=url" hx-target="#content">url</th><th></th></tr>"##,
+            r##"<table><colgroup><col class="col-check"><col class="col-name"><col class="col-value"><col style="width:120px"><col class="col-actions"></colgroup><tr><th class="check"><input type="checkbox" class="select-all" onchange="toggleAll(this)"></th><th class="sortable{name_cls}" hx-get="/content?sort=name" hx-target="#content">name</th><th class="sortable{url_cls}" hx-get="/content?sort=url" hx-target="#content">url</th><th>aliases</th><th></th></tr>"##,
         ));
-        for (name, url) in &links {
-            html.push_str(&link_row(name, url));
-        }
-        html.push_str("</table>");
-    }
-    html.push_str("</div>");
-
-    // Aliases section
-    html.push_str(r##"<div class="section" id="section-aliases"><h2>aliases</h2>"##);
-    if aliases.is_empty() {
-        html.push_str(r#"<p class="empty">no aliases yet</p>"#);
-    } else {
-        html.push_str(&format!(
-            r##"<table><colgroup><col class="col-check"><col class="col-name"><col class="col-value"><col class="col-actions"></colgroup><tr><th class="check"><input type="checkbox" class="select-all" onchange="toggleAll(this)"></th><th class="sortable{name_cls}" hx-get="/content?sort=name" hx-target="#content">alias</th><th class="sortable{url_cls}" hx-get="/content?sort=url" hx-target="#content">target</th><th></th></tr>"##,
-        ));
-        for (alias, target) in &aliases {
-            html.push_str(&alias_row(alias, target, config));
+        for (name, entry) in &urls {
+            html.push_str(&url_row(name, entry));
         }
         html.push_str("</table>");
     }
@@ -633,28 +600,20 @@ fn content_err(state: &Arc<AppState>, msg: &str) -> Html<String> {
     ))
 }
 
-async fn add_link(State(state): S, axum::extract::Form(form): Form) -> Html<String> {
+fn save_or_err(state: &Arc<AppState>, config: &Config) -> Html<String> {
+    match state.save_config(config) {
+        Ok(()) => content_ok(state),
+        Err(e) => content_err(state, &format!("failed to save: {e}")),
+    }
+}
+
+async fn add_url(State(state): S, axum::extract::Form(form): Form) -> Html<String> {
     let name = form.get("name").cloned().unwrap_or_default();
     let url = form.get("url").cloned().unwrap_or_default();
     if !name.is_empty() && !url.is_empty() {
         let mut config = state.load_config();
-        config.links.insert(name, url);
-        state.save_config(&config);
-    }
-    content_ok(&state)
-}
-
-async fn add_alias(State(state): S, axum::extract::Form(form): Form) -> Html<String> {
-    let alias = form.get("alias").cloned().unwrap_or_default();
-    let target = form.get("target").cloned().unwrap_or_default();
-    if !alias.is_empty() && !target.is_empty() {
-        let config = state.load_config();
-        if !config.links.contains_key(&target) {
-            return content_err(&state, &strings::err_alias_target_missing(&target));
-        }
-        let mut config = config;
-        config.aliases.insert(alias, target);
-        state.save_config(&config);
+        config.urls.insert(name, UrlEntry::Simple(url));
+        return save_or_err(&state, &config);
     }
     content_ok(&state)
 }
@@ -672,10 +631,7 @@ async fn add_group(State(state): S, axum::extract::Form(form): Form) -> Html<Str
             let config = state.load_config();
             let missing: Vec<&str> = entries
                 .iter()
-                .filter(|e| {
-                    !config.links.contains_key(e.as_str())
-                        && !config.aliases.contains_key(e.as_str())
-                })
+                .filter(|e| !config.contains(e))
                 .map(String::as_str)
                 .collect();
             if !missing.is_empty() {
@@ -683,36 +639,31 @@ async fn add_group(State(state): S, axum::extract::Form(form): Form) -> Html<Str
             }
             let mut config = config;
             config.groups.insert(name, entries);
-            state.save_config(&config);
+            return save_or_err(&state, &config);
         }
     }
     content_ok(&state)
 }
 
-async fn delete_link(State(state): S, Path(name): Path<String>) -> Html<String> {
+async fn delete_url(State(state): S, Path(name): Path<String>) -> Html<String> {
     let mut config = state.load_config();
-    config.links.remove(&name);
-    state.save_config(&config);
-    content_ok(&state)
-}
-
-async fn delete_alias(State(state): S, Path(name): Path<String>) -> Html<String> {
-    let mut config = state.load_config();
-    config.aliases.remove(&name);
-    state.save_config(&config);
-    content_ok(&state)
+    if let Err(e) = config.delete_url(&name) {
+        return content_err(&state, &e.to_string());
+    }
+    save_or_err(&state, &config)
 }
 
 async fn delete_group(State(state): S, Path(name): Path<String>) -> Html<String> {
     let mut config = state.load_config();
-    config.groups.remove(&name);
-    state.save_config(&config);
-    content_ok(&state)
+    if let Err(e) = config.delete_group(&name) {
+        return content_err(&state, &e.to_string());
+    }
+    save_or_err(&state, &config)
 }
 
 // -- Edit handlers -----------------------------------------------------------
 
-async fn edit_link(
+async fn edit_url(
     State(state): S,
     Path(name): Path<String>,
     axum::extract::Form(form): Form,
@@ -721,50 +672,51 @@ async fn edit_link(
     let new_name = form.get("new_name").filter(|s| !s.is_empty());
     let new_url = form.get("new_url").filter(|s| !s.is_empty());
 
+    // Rename first (can fail), then update value on the (possibly new) key
+    let key = if let Some(new_name) = new_name
+        && new_name != &name
+    {
+        if let Err(e) = config.rename_url(&name, new_name) {
+            return content_err(&state, &e.to_string());
+        }
+        new_name.clone()
+    } else {
+        name
+    };
+
     if let Some(new_url) = new_url
-        && let Some(url) = config.links.get_mut(&name)
+        && let Some(entry) = config.urls.get_mut(&key)
     {
-        *url = new_url.clone();
+        entry.set_url(new_url.clone());
     }
 
-    if let Some(new_name) = new_name
-        && new_name != &name
-        && let Err(e) = config.rename_link(&name, new_name)
-    {
-        return content_err(&state, &e.to_string());
-    }
-
-    state.save_config(&config);
-    content_ok(&state)
-}
-
-async fn edit_alias(
-    State(state): S,
-    Path(name): Path<String>,
-    axum::extract::Form(form): Form,
-) -> Html<String> {
-    let mut config = state.load_config();
-    let new_name = form.get("new_name").filter(|s| !s.is_empty());
-    let new_target = form.get("new_target").filter(|s| !s.is_empty());
-
-    if let Some(new_target) = new_target {
-        if !config.links.contains_key(new_target) {
-            return content_err(&state, &strings::err_alias_target_missing(new_target));
-        }
-        if let Some(target) = config.aliases.get_mut(&name) {
-            *target = new_target.clone();
+    // Update aliases if provided
+    if let Some(new_aliases) = form.get("new_aliases") {
+        let aliases: Vec<String> = new_aliases
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if let Some(entry) = config.urls.get_mut(&key) {
+            match entry {
+                UrlEntry::Simple(url) => {
+                    if !aliases.is_empty() {
+                        *entry = UrlEntry::Full {
+                            url: url.clone(),
+                            aliases,
+                        };
+                    }
+                }
+                UrlEntry::Full {
+                    aliases: existing, ..
+                } => {
+                    *existing = aliases;
+                }
+            }
         }
     }
 
-    if let Some(new_name) = new_name
-        && new_name != &name
-        && let Err(e) = config.rename_alias(&name, new_name)
-    {
-        return content_err(&state, &e.to_string());
-    }
-
-    state.save_config(&config);
-    content_ok(&state)
+    save_or_err(&state, &config)
 }
 
 async fn edit_group(
@@ -776,7 +728,8 @@ async fn edit_group(
     let new_name = form.get("new_name").filter(|s| !s.is_empty());
     let new_entries = form.get("new_entries").filter(|s| !s.is_empty());
 
-    if let Some(new_entries) = new_entries {
+    // Parse and validate entries before any mutation
+    let parsed_entries = if let Some(new_entries) = new_entries {
         let entries: Vec<String> = new_entries
             .split(',')
             .map(|s| s.trim().to_string())
@@ -784,28 +737,36 @@ async fn edit_group(
             .collect();
         let missing: Vec<&str> = entries
             .iter()
-            .filter(|e| {
-                !config.links.contains_key(e.as_str()) && !config.aliases.contains_key(e.as_str())
-            })
+            .filter(|e| !config.contains(e))
             .map(String::as_str)
             .collect();
         if !missing.is_empty() {
             return content_err(&state, &strings::err_group_entries_missing(&missing));
         }
-        if let Some(existing) = config.groups.get_mut(&name) {
-            *existing = entries;
-        }
-    }
+        Some(entries)
+    } else {
+        None
+    };
 
-    if let Some(new_name) = new_name
+    // Rename first, then update entries on the (possibly new) key
+    let key = if let Some(new_name) = new_name
         && new_name != &name
-        && let Some(entries) = config.groups.remove(&name)
     {
-        config.groups.insert(new_name.clone(), entries);
+        if let Err(e) = config.rename_group(&name, new_name) {
+            return content_err(&state, &e.to_string());
+        }
+        new_name.clone()
+    } else {
+        name
+    };
+
+    if let Some(entries) = parsed_entries
+        && let Some(existing) = config.groups.get_mut(&key)
+    {
+        *existing = entries;
     }
 
-    state.save_config(&config);
-    content_ok(&state)
+    save_or_err(&state, &config)
 }
 
 // -- Server ------------------------------------------------------------------
@@ -818,19 +779,16 @@ fn create_router(storage: Box<dyn Storage>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/content", get(content))
-        .route("/add/link", post(add_link))
-        .route("/add/alias", post(add_alias))
+        .route("/add/url", post(add_url))
         .route("/add/group", post(add_group))
-        .route("/delete/link/{name}", post(delete_link))
-        .route("/delete/alias/{name}", post(delete_alias))
+        .route("/delete/url/{name}", post(delete_url))
         .route("/delete/group/{name}", post(delete_group))
-        .route("/edit/link/{name}", post(edit_link))
-        .route("/edit/alias/{name}", post(edit_alias))
+        .route("/edit/url/{name}", post(edit_url))
         .route("/edit/group/{name}", post(edit_group))
         .with_state(state)
 }
 
-pub fn run(storage: Box<dyn Storage>) -> anyhow::Result<()> {
+pub fn run_webapp(storage: Box<dyn Storage>) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         let port: u16 = 1414;

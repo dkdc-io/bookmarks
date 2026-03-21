@@ -7,7 +7,7 @@ use iced::widget::{
 use iced::{Element, Length, Size, Theme};
 use std::collections::HashSet;
 
-use bookmarks_core::config::Config;
+use bookmarks_core::config::{Config, UrlEntry};
 use bookmarks_core::storage::Storage;
 use bookmarks_core::strings;
 
@@ -38,8 +38,7 @@ mod colors {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     All,
-    Links,
-    Aliases,
+    Urls,
     Groups,
 }
 
@@ -51,8 +50,7 @@ enum SortField {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ItemKind {
-    Link,
-    Alias,
+    Url,
     Group,
 }
 
@@ -63,6 +61,8 @@ struct RowEditState {
     original_name: String,
     edit_name: String,
     edit_value: String,
+    /// Comma-separated aliases (only used for Url items)
+    edit_aliases: String,
 }
 
 #[derive(Debug, Clone)]
@@ -95,12 +95,9 @@ enum Message {
     SearchChanged(String),
     SortBy(SortField),
 
-    AddLinkName(String),
-    AddLinkUrl(String),
-    SubmitLink,
-    AddAliasName(String),
-    AddAliasTarget(String),
-    SubmitAlias,
+    AddUrlName(String),
+    AddUrlValue(String),
+    SubmitUrl,
     AddGroupName(String),
     AddGroupEntries(String),
     SubmitGroup,
@@ -111,10 +108,11 @@ enum Message {
     DeleteSelected,
 
     RequestDelete(ItemKind, String),
-    /// Enter row edit mode: (kind, name, current_name, current_value)
-    StartRowEdit(ItemKind, String, String, String),
+    /// Enter row edit mode: (kind, name, current_name, current_value, current_aliases)
+    StartRowEdit(ItemKind, String, String, String, String),
     EditNameChanged(String),
     EditValueChanged(String),
+    EditAliasesChanged(String),
     SaveEdit,
     CancelEdit,
 
@@ -133,7 +131,7 @@ enum Message {
 
 // -- App State ---------------------------------------------------------------
 
-struct Links {
+struct Bookmarks {
     storage: Box<dyn Storage>,
     config: Config,
 
@@ -141,10 +139,8 @@ struct Links {
     search: String,
     sort: SortField,
 
-    add_link_name: String,
-    add_link_url: String,
-    add_alias_name: String,
-    add_alias_target: String,
+    add_url_name: String,
+    add_url_value: String,
     add_group_name: String,
     add_group_entries: String,
 
@@ -155,7 +151,7 @@ struct Links {
     error: Option<String>,
 }
 
-impl Links {
+impl Bookmarks {
     fn new(storage: Box<dyn Storage>) -> (Self, iced::Task<Message>) {
         let config = storage.load().unwrap_or_default();
         (
@@ -165,10 +161,8 @@ impl Links {
                 tab: Tab::All,
                 search: String::new(),
                 sort: SortField::Name,
-                add_link_name: String::new(),
-                add_link_url: String::new(),
-                add_alias_name: String::new(),
-                add_alias_target: String::new(),
+                add_url_name: String::new(),
+                add_url_value: String::new(),
                 add_group_name: String::new(),
                 add_group_entries: String::new(),
                 selected: HashSet::new(),
@@ -181,8 +175,10 @@ impl Links {
         )
     }
 
-    fn save(&self) {
-        let _ = self.storage.save(&self.config);
+    fn save(&mut self) {
+        if let Err(e) = self.storage.save(&self.config) {
+            self.error = Some(format!("failed to save: {e}"));
+        }
     }
 
     /// Save the current row edit and clear edit state.
@@ -193,20 +189,48 @@ impl Links {
             if name.is_empty() || value.is_empty() {
                 return;
             }
-            // Apply value change first, then name change (rename cascades)
+            // Apply value change first, then aliases, then name (rename cascades).
+            // If an error occurs, restore edit state so the user can retry.
             self.apply_edit(edit.kind, &edit.original_name, "value", &value);
+            if self.error.is_some() {
+                self.editing = Some(edit);
+                return;
+            }
+            if edit.kind == ItemKind::Url {
+                self.apply_edit(
+                    edit.kind,
+                    &edit.original_name,
+                    "aliases",
+                    &edit.edit_aliases,
+                );
+                if self.error.is_some() {
+                    self.editing = Some(RowEditState {
+                        kind: edit.kind,
+                        original_name: edit.original_name,
+                        edit_name: name,
+                        edit_value: value,
+                        edit_aliases: edit.edit_aliases,
+                    });
+                    return;
+                }
+            }
             if name != edit.original_name {
                 self.apply_edit(edit.kind, &edit.original_name, "name", &name);
+                if self.error.is_some() {
+                    self.editing = Some(RowEditState {
+                        kind: edit.kind,
+                        original_name: edit.original_name,
+                        edit_name: name,
+                        edit_value: value,
+                        edit_aliases: edit.edit_aliases,
+                    });
+                }
             }
         }
     }
 
     fn resolve_url<'a>(&'a self, name: &str) -> Option<&'a str> {
-        if let Some(target) = self.config.aliases.get(name) {
-            self.config.links.get(target).map(String::as_str)
-        } else {
-            self.config.links.get(name).map(String::as_str)
-        }
+        bookmarks_core::open::resolve_uri(name, &self.config).ok()
     }
 
     fn matches_filter(&self, haystack: &str) -> bool {
@@ -241,33 +265,16 @@ impl Links {
                 };
             }
 
-            Message::AddLinkName(s) => self.add_link_name = s,
-            Message::AddLinkUrl(s) => self.add_link_url = s,
-            Message::SubmitLink => {
-                let name = self.add_link_name.trim().to_string();
-                let url = self.add_link_url.trim().to_string();
+            Message::AddUrlName(s) => self.add_url_name = s,
+            Message::AddUrlValue(s) => self.add_url_value = s,
+            Message::SubmitUrl => {
+                let name = self.add_url_name.trim().to_string();
+                let url = self.add_url_value.trim().to_string();
                 if !name.is_empty() && !url.is_empty() {
-                    self.config.links.insert(name, url);
+                    self.config.urls.insert(name, UrlEntry::Simple(url));
                     self.save();
-                    self.add_link_name.clear();
-                    self.add_link_url.clear();
-                }
-            }
-            Message::AddAliasName(s) => self.add_alias_name = s,
-            Message::AddAliasTarget(s) => self.add_alias_target = s,
-            Message::SubmitAlias => {
-                let alias = self.add_alias_name.trim().to_string();
-                let target = self.add_alias_target.trim().to_string();
-                if !alias.is_empty() && !target.is_empty() {
-                    if !self.config.links.contains_key(&target) {
-                        self.error = Some(strings::err_alias_target_missing(&target));
-                    } else {
-                        self.config.aliases.insert(alias, target);
-                        self.save();
-                        self.add_alias_name.clear();
-                        self.add_alias_target.clear();
-                        self.error = None;
-                    }
+                    self.add_url_name.clear();
+                    self.add_url_value.clear();
                 }
             }
             Message::AddGroupName(s) => self.add_group_name = s,
@@ -283,10 +290,7 @@ impl Links {
                         .collect();
                     let missing: Vec<&str> = entries
                         .iter()
-                        .filter(|e| {
-                            !self.config.links.contains_key(e.as_str())
-                                && !self.config.aliases.contains_key(e.as_str())
-                        })
+                        .filter(|e| !self.config.contains(e))
                         .map(String::as_str)
                         .collect();
                     if !missing.is_empty() {
@@ -330,8 +334,7 @@ impl Links {
                         .iter()
                         .map(|(k, n)| {
                             let kind_str = match k {
-                                ItemKind::Link => "link",
-                                ItemKind::Alias => "alias",
+                                ItemKind::Url => "url",
                                 ItemKind::Group => "group",
                             };
                             format!("{kind_str} \"{n}\"")
@@ -354,8 +357,7 @@ impl Links {
 
             Message::RequestDelete(kind, name) => {
                 let kind_str = match kind {
-                    ItemKind::Link => "link",
-                    ItemKind::Alias => "alias",
+                    ItemKind::Url => "url",
                     ItemKind::Group => "group",
                 };
                 self.confirm = Some(ConfirmState {
@@ -366,7 +368,13 @@ impl Links {
                     action: ConfirmAction::DeleteSingle(kind, name),
                 });
             }
-            Message::StartRowEdit(kind, original_name, current_name, current_value) => {
+            Message::StartRowEdit(
+                kind,
+                original_name,
+                current_name,
+                current_value,
+                current_aliases,
+            ) => {
                 self.save_row_edit();
                 self.context_menu = None;
                 self.editing = Some(RowEditState {
@@ -374,11 +382,17 @@ impl Links {
                     original_name,
                     edit_name: current_name,
                     edit_value: current_value,
+                    edit_aliases: current_aliases,
                 });
             }
             Message::EditNameChanged(s) => {
                 if let Some(ref mut edit) = self.editing {
                     edit.edit_name = s;
+                }
+            }
+            Message::EditAliasesChanged(s) => {
+                if let Some(ref mut edit) = self.editing {
+                    edit.edit_aliases = s;
                 }
             }
             Message::EditValueChanged(s) => {
@@ -415,6 +429,7 @@ impl Links {
                     match confirm.action {
                         ConfirmAction::DeleteSingle(kind, name) => {
                             self.delete_item(kind, &name);
+                            self.selected.remove(&(kind, name));
                         }
                         ConfirmAction::DeleteBulk(items) => {
                             for (kind, name) in items {
@@ -438,56 +453,59 @@ impl Links {
     }
 
     fn delete_item(&mut self, kind: ItemKind, name: &str) {
-        match kind {
-            ItemKind::Link => {
-                self.config.links.remove(name);
-            }
-            ItemKind::Alias => {
-                self.config.aliases.remove(name);
-            }
-            ItemKind::Group => {
-                self.config.groups.remove(name);
-            }
+        let result = match kind {
+            ItemKind::Url => self.config.delete_url(name),
+            ItemKind::Group => self.config.delete_group(name),
+        };
+        if let Err(e) = result {
+            self.error = Some(e.to_string());
         }
     }
 
     fn apply_edit(&mut self, kind: ItemKind, name: &str, field: &str, value: &str) {
         match (kind, field) {
-            (ItemKind::Link, "name") => {
+            (ItemKind::Url, "name") => {
                 if value != name
-                    && let Err(e) = self.config.rename_link(name, value)
+                    && let Err(e) = self.config.rename_url(name, value)
                 {
                     self.error = Some(e.to_string());
                     return;
                 }
             }
-            (ItemKind::Link, "value") => {
-                if let Some(url) = self.config.links.get_mut(name) {
-                    *url = value.to_string();
+            (ItemKind::Url, "value") => {
+                if let Some(entry) = self.config.urls.get_mut(name) {
+                    entry.set_url(value.to_string());
                 }
             }
-            (ItemKind::Alias, "name") => {
-                if value != name
-                    && let Err(e) = self.config.rename_alias(name, value)
-                {
-                    self.error = Some(e.to_string());
-                    return;
-                }
-            }
-            (ItemKind::Alias, "value") => {
-                if !self.config.links.contains_key(value) {
-                    self.error = Some(strings::err_alias_target_missing(value));
-                    return;
-                }
-                if let Some(target) = self.config.aliases.get_mut(name) {
-                    *target = value.to_string();
+            (ItemKind::Url, "aliases") => {
+                let new_aliases: Vec<String> = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if let Some(entry) = self.config.urls.get_mut(name) {
+                    // Replace aliases entirely
+                    match entry {
+                        UrlEntry::Simple(url) => {
+                            if !new_aliases.is_empty() {
+                                *entry = UrlEntry::Full {
+                                    url: url.clone(),
+                                    aliases: new_aliases,
+                                };
+                            }
+                        }
+                        UrlEntry::Full { aliases, .. } => {
+                            *aliases = new_aliases;
+                        }
+                    }
                 }
             }
             (ItemKind::Group, "name") => {
                 if value != name
-                    && let Some(entries) = self.config.groups.remove(name)
+                    && let Err(e) = self.config.rename_group(name, value)
                 {
-                    self.config.groups.insert(value.to_string(), entries);
+                    self.error = Some(e.to_string());
+                    return;
                 }
             }
             (ItemKind::Group, "value") => {
@@ -498,10 +516,7 @@ impl Links {
                     .collect();
                 let missing: Vec<&str> = entries
                     .iter()
-                    .filter(|e| {
-                        !self.config.links.contains_key(e.as_str())
-                            && !self.config.aliases.contains_key(e.as_str())
-                    })
+                    .filter(|e| !self.config.contains(e))
                     .map(String::as_str)
                     .collect();
                 if !missing.is_empty() {
@@ -520,17 +535,11 @@ impl Links {
 
     fn visible_items(&self) -> Vec<(ItemKind, String)> {
         let mut items = Vec::new();
-        if self.tab == Tab::All || self.tab == Tab::Links {
-            for (name, url) in &self.config.links {
-                if self.matches_filter(&format!("{name} {url}")) {
-                    items.push((ItemKind::Link, name.clone()));
-                }
-            }
-        }
-        if self.tab == Tab::All || self.tab == Tab::Aliases {
-            for (name, target) in &self.config.aliases {
-                if self.matches_filter(&format!("{name} {target}")) {
-                    items.push((ItemKind::Alias, name.clone()));
+        if self.tab == Tab::All || self.tab == Tab::Urls {
+            for (name, entry) in &self.config.urls {
+                let aliases_str = entry.aliases().join(", ");
+                if self.matches_filter(&format!("{name} {} {aliases_str}", entry.url())) {
+                    items.push((ItemKind::Url, name.clone()));
                 }
             }
         }
@@ -586,11 +595,8 @@ impl Links {
 
         // Sections
         let mut sections = column![].spacing(20);
-        if self.tab == Tab::All || self.tab == Tab::Links {
-            sections = sections.push(self.view_links_section());
-        }
-        if self.tab == Tab::All || self.tab == Tab::Aliases {
-            sections = sections.push(self.view_aliases_section());
+        if self.tab == Tab::All || self.tab == Tab::Urls {
+            sections = sections.push(self.view_urls_section());
         }
         if self.tab == Tab::All || self.tab == Tab::Groups {
             sections = sections.push(self.view_groups_section());
@@ -651,12 +657,11 @@ impl Links {
             .into()
         };
 
-        let total = self.config.links.len() + self.config.aliases.len() + self.config.groups.len();
+        let total = self.config.urls.len() + self.config.groups.len();
 
         let tabs = row![
             tab_btn("all", total, Tab::All),
-            tab_btn("links", self.config.links.len(), Tab::Links),
-            tab_btn("aliases", self.config.aliases.len(), Tab::Aliases),
+            tab_btn("urls", self.config.urls.len(), Tab::Urls),
             tab_btn("groups", self.config.groups.len(), Tab::Groups),
         ]
         .spacing(4);
@@ -720,43 +725,21 @@ impl Links {
     }
 
     fn view_add_forms(&self) -> Element<'_, Message> {
-        let link_form = row![
-            text_input(strings::PH_LINK_NAME, &self.add_link_name)
-                .on_input(Message::AddLinkName)
-                .on_submit(Message::SubmitLink)
+        let url_form = row![
+            text_input(strings::PH_URL_NAME, &self.add_url_name)
+                .on_input(Message::AddUrlName)
+                .on_submit(Message::SubmitUrl)
                 .size(13)
                 .width(Length::FillPortion(2))
                 .style(|_, status| input_style(status)),
-            text_input(strings::PH_LINK_URL, &self.add_link_url)
-                .on_input(Message::AddLinkUrl)
-                .on_submit(Message::SubmitLink)
+            text_input(strings::PH_URL, &self.add_url_value)
+                .on_input(Message::AddUrlValue)
+                .on_submit(Message::SubmitUrl)
                 .size(13)
                 .width(Length::FillPortion(3))
                 .style(|_, status| input_style(status)),
-            button(text("+ link").size(12).color(colors::PURPLE))
-                .on_press(Message::SubmitLink)
-                .padding([5, 8])
-                .width(72)
-                .style(|_, _| add_button_style()),
-        ]
-        .spacing(6)
-        .align_y(iced::Alignment::Center);
-
-        let alias_form = row![
-            text_input(strings::PH_ALIAS_NAME, &self.add_alias_name)
-                .on_input(Message::AddAliasName)
-                .on_submit(Message::SubmitAlias)
-                .size(13)
-                .width(Length::FillPortion(2))
-                .style(|_, status| input_style(status)),
-            text_input(strings::PH_ALIAS_TARGET, &self.add_alias_target)
-                .on_input(Message::AddAliasTarget)
-                .on_submit(Message::SubmitAlias)
-                .size(13)
-                .width(Length::FillPortion(3))
-                .style(|_, status| input_style(status)),
-            button(text("+ alias").size(12).color(colors::PURPLE))
-                .on_press(Message::SubmitAlias)
+            button(text("+ url").size(12).color(colors::PURPLE))
+                .on_press(Message::SubmitUrl)
                 .padding([5, 8])
                 .width(72)
                 .style(|_, _| add_button_style()),
@@ -786,31 +769,32 @@ impl Links {
         .spacing(6)
         .align_y(iced::Alignment::Center);
 
-        column![link_form, alias_form, group_form].spacing(6).into()
+        column![url_form, group_form].spacing(6).into()
     }
 
-    fn view_links_section(&self) -> Element<'_, Message> {
-        let mut links: Vec<_> = self.config.links.iter().collect();
+    fn view_urls_section(&self) -> Element<'_, Message> {
+        let mut urls: Vec<_> = self.config.urls.iter().collect();
         match self.sort {
-            SortField::Name => links.sort_by_key(|(k, _)| k.as_str()),
-            SortField::Value => links.sort_by_key(|(_, v)| v.as_str()),
+            SortField::Name => urls.sort_by_key(|(k, _)| k.as_str()),
+            SortField::Value => urls.sort_by_key(|(_, v)| v.url()),
         }
 
         let header = self.view_table_header("name", "url");
 
         let mut rows = Column::new().spacing(0);
         let mut visible_count = 0;
-        for (name, url) in &links {
-            if !self.matches_filter(&format!("{name} {url}")) {
+        for (name, entry) in &urls {
+            let aliases_str = entry.aliases().join(", ");
+            if !self.matches_filter(&format!("{name} {} {aliases_str}", entry.url())) {
                 continue;
             }
             visible_count += 1;
-            rows = rows.push(self.view_link_row(name, url));
+            rows = rows.push(self.view_url_row(name, entry));
             rows = rows.push(iced::widget::rule::horizontal(1).style(|_| rule_style()));
         }
 
         let body: Element<'_, Message> = if visible_count == 0 {
-            text("no links yet").size(13).color(colors::TEXT_DIM).into()
+            text("no urls yet").size(13).color(colors::TEXT_DIM).into()
         } else {
             column![
                 header,
@@ -820,46 +804,7 @@ impl Links {
             .into()
         };
 
-        column![text("links").size(16).color(colors::TEXT), body]
-            .spacing(8)
-            .into()
-    }
-
-    fn view_aliases_section(&self) -> Element<'_, Message> {
-        let mut aliases: Vec<_> = self.config.aliases.iter().collect();
-        match self.sort {
-            SortField::Name => aliases.sort_by_key(|(k, _)| k.as_str()),
-            SortField::Value => aliases.sort_by_key(|(_, v)| v.as_str()),
-        }
-
-        let header = self.view_table_header("alias", "target");
-
-        let mut rows = Column::new().spacing(0);
-        let mut visible_count = 0;
-        for (alias, target) in &aliases {
-            if !self.matches_filter(&format!("{alias} {target}")) {
-                continue;
-            }
-            visible_count += 1;
-            rows = rows.push(self.view_alias_row(alias, target));
-            rows = rows.push(iced::widget::rule::horizontal(1).style(|_| rule_style()));
-        }
-
-        let body: Element<'_, Message> = if visible_count == 0 {
-            text("no aliases yet")
-                .size(13)
-                .color(colors::TEXT_DIM)
-                .into()
-        } else {
-            column![
-                header,
-                iced::widget::rule::horizontal(1).style(|_| rule_style()),
-                rows
-            ]
-            .into()
-        };
-
-        column![text("aliases").size(16).color(colors::TEXT), body]
+        column![text("urls").size(16).color(colors::TEXT), body]
             .spacing(8)
             .into()
     }
@@ -943,15 +888,11 @@ impl Links {
     /// Resolve all URLs for an item (for context menu).
     fn resolve_item_urls(&self, kind: ItemKind, name: &str) -> Vec<String> {
         match kind {
-            ItemKind::Link => self
+            ItemKind::Url => self
                 .config
-                .links
+                .urls
                 .get(name)
-                .map(|u| vec![u.clone()])
-                .unwrap_or_default(),
-            ItemKind::Alias => self
-                .resolve_url(name)
-                .map(|u| vec![u.to_string()])
+                .map(|e| vec![e.url().to_string()])
                 .unwrap_or_default(),
             ItemKind::Group => self
                 .config
@@ -981,19 +922,25 @@ impl Links {
             .is_some_and(|e| e.kind == kind && e.original_name == name)
     }
 
-    fn view_link_row<'a>(&'a self, name: &'a str, url: &'a str) -> Element<'a, Message> {
-        let is_selected = self.selected.contains(&(ItemKind::Link, name.to_string()));
+    fn view_url_row<'a>(&'a self, name: &'a str, entry: &'a UrlEntry) -> Element<'a, Message> {
+        let url = entry.url();
+        let is_selected = self.selected.contains(&(ItemKind::Url, name.to_string()));
         let cb = checkbox(is_selected)
             .on_toggle({
                 let name = name.to_string();
-                move |_| Message::ToggleSelect(ItemKind::Link, name.clone())
+                move |_| Message::ToggleSelect(ItemKind::Url, name.clone())
             })
             .size(14)
             .style(|_, _| checkbox_style());
 
-        if self.is_editing(ItemKind::Link, name) {
+        if self.is_editing(ItemKind::Url, name) {
             let edit = self.editing.as_ref().unwrap();
-            return self.view_edit_row(cb.into(), &edit.edit_name, "name", &edit.edit_value, "url");
+            return self.view_url_edit_row(
+                cb.into(),
+                &edit.edit_name,
+                &edit.edit_value,
+                &edit.edit_aliases,
+            );
         }
 
         let name_cell = button(text(name).size(13).color(colors::PURPLE))
@@ -1002,13 +949,34 @@ impl Links {
             .width(Length::Fill)
             .style(|_, status| link_cell_style(status));
 
-        let url_cell = button(text(url).size(13).color(colors::CYAN))
+        // Show URL + aliases in the value column
+        let aliases = entry.aliases();
+        let url_cell: Element<'_, Message> = if aliases.is_empty() {
+            button(text(url).size(13).color(colors::CYAN))
+                .on_press(Message::OpenUrl(url.to_string()))
+                .padding([2, 4])
+                .width(Length::Fill)
+                .style(|_, status| link_cell_style(status))
+                .into()
+        } else {
+            let alias_text = format!(" ({})", aliases.join(", "));
+            button(
+                row![
+                    text(url).size(13).color(colors::CYAN),
+                    text(alias_text).size(11).color(colors::TEXT_DIM),
+                ]
+                .spacing(4)
+                .align_y(iced::Alignment::Center),
+            )
             .on_press(Message::OpenUrl(url.to_string()))
             .padding([2, 4])
             .width(Length::Fill)
-            .style(|_, status| link_cell_style(status));
+            .style(|_, status| link_cell_style(status))
+            .into()
+        };
 
-        let actions = self.view_row_actions_or_context(ItemKind::Link, name, url);
+        let aliases_str = entry.aliases().join(", ");
+        let actions = self.view_row_actions_or_context(ItemKind::Url, name, url, &aliases_str);
 
         let r = row![
             container(cb).width(28),
@@ -1020,88 +988,11 @@ impl Links {
         .padding([6, 8])
         .align_y(iced::Alignment::Center);
 
-        let urls = self.resolve_item_urls(ItemKind::Link, name);
+        let urls = self.resolve_item_urls(ItemKind::Url, name);
         mouse_area(r)
             .on_right_press(Message::ShowContextMenu(
-                ItemKind::Link,
+                ItemKind::Url,
                 name.to_string(),
-                urls,
-            ))
-            .into()
-    }
-
-    fn view_alias_row<'a>(&'a self, alias: &'a str, target: &'a str) -> Element<'a, Message> {
-        let is_selected = self
-            .selected
-            .contains(&(ItemKind::Alias, alias.to_string()));
-        let cb = checkbox(is_selected)
-            .on_toggle({
-                let alias = alias.to_string();
-                move |_| Message::ToggleSelect(ItemKind::Alias, alias.clone())
-            })
-            .size(14)
-            .style(|_, _| checkbox_style());
-
-        if self.is_editing(ItemKind::Alias, alias) {
-            let edit = self.editing.as_ref().unwrap();
-            return self.view_edit_row(
-                cb.into(),
-                &edit.edit_name,
-                "alias",
-                &edit.edit_value,
-                "target",
-            );
-        }
-
-        let resolved_url = self.resolve_url(alias).map(String::from);
-
-        let name_cell: Element<'_, Message> = if let Some(url) = resolved_url {
-            button(text(alias).size(13).color(colors::PURPLE))
-                .on_press(Message::OpenUrl(url))
-                .padding([2, 4])
-                .width(Length::Fill)
-                .style(|_, status| link_cell_style(status))
-                .into()
-        } else {
-            container(text(alias).size(13).color(colors::PURPLE))
-                .padding([2, 4])
-                .width(Length::Fill)
-                .into()
-        };
-
-        // Target is clickable if it resolves to a URL
-        let target_url = self.config.links.get(target).cloned();
-        let target_cell: Element<'_, Message> = if let Some(url) = target_url {
-            button(text(target).size(13).color(colors::PURPLE_DIM))
-                .on_press(Message::OpenUrl(url))
-                .padding([2, 4])
-                .width(Length::Fill)
-                .style(|_, status| link_cell_style(status))
-                .into()
-        } else {
-            container(text(target).size(13).color(colors::PURPLE_DIM))
-                .padding([2, 4])
-                .width(Length::Fill)
-                .into()
-        };
-
-        let actions = self.view_row_actions_or_context(ItemKind::Alias, alias, target);
-
-        let r = row![
-            container(cb).width(28),
-            container(name_cell).width(130).clip(true),
-            container(target_cell).width(Length::Fill).clip(true),
-            container(actions).width(120),
-        ]
-        .spacing(8)
-        .padding([6, 8])
-        .align_y(iced::Alignment::Center);
-
-        let urls = self.resolve_item_urls(ItemKind::Alias, alias);
-        mouse_area(r)
-            .on_right_press(Message::ShowContextMenu(
-                ItemKind::Alias,
-                alias.to_string(),
                 urls,
             ))
             .into()
@@ -1179,7 +1070,8 @@ impl Links {
         .padding([2, 4])
         .width(Length::Fill);
 
-        let actions = self.view_row_actions_or_context(ItemKind::Group, name, &entries.join(", "));
+        let actions =
+            self.view_row_actions_or_context(ItemKind::Group, name, &entries.join(", "), "");
 
         let r = row![
             container(cb).width(28),
@@ -1199,6 +1091,60 @@ impl Links {
                 urls,
             ))
             .into()
+    }
+
+    /// A URL row in edit mode: name, url, aliases + save/cancel.
+    fn view_url_edit_row<'a>(
+        &self,
+        cb: Element<'a, Message>,
+        edit_name: &str,
+        edit_url: &str,
+        edit_aliases: &str,
+    ) -> Element<'a, Message> {
+        let name_input = text_input("name", edit_name)
+            .on_input(Message::EditNameChanged)
+            .on_submit(Message::SaveEdit)
+            .size(13)
+            .width(Length::Fill)
+            .style(|_, status| edit_input_style(status));
+
+        let url_input = text_input("url", edit_url)
+            .on_input(Message::EditValueChanged)
+            .on_submit(Message::SaveEdit)
+            .size(13)
+            .width(Length::Fill)
+            .style(|_, status| edit_input_style(status));
+
+        let aliases_input = text_input("aliases (comma-separated)", edit_aliases)
+            .on_input(Message::EditAliasesChanged)
+            .on_submit(Message::SaveEdit)
+            .size(13)
+            .width(Length::Fill)
+            .style(|_, status| edit_input_style(status));
+
+        let save_btn = button(text("save").size(12).color(colors::PURPLE))
+            .on_press(Message::SaveEdit)
+            .padding([2, 8])
+            .style(|_, _| add_button_style());
+
+        let cancel_btn = button(text("cancel").size(12).color(colors::TEXT_DIM))
+            .on_press(Message::CancelEdit)
+            .padding([2, 8])
+            .style(|_, _| default_button_style());
+
+        row![
+            container(cb).width(28),
+            container(name_input).width(100),
+            container(url_input).width(Length::FillPortion(3)),
+            container(aliases_input).width(Length::FillPortion(2)),
+            row![save_btn, cancel_btn]
+                .spacing(4)
+                .align_y(iced::Alignment::Center),
+        ]
+        .spacing(8)
+        .padding([6, 8])
+        .align_y(iced::Alignment::Center)
+        .into()
     }
 
     /// A row in edit mode: two text inputs + save/cancel buttons.
@@ -1254,13 +1200,14 @@ impl Links {
         kind: ItemKind,
         name: &str,
         current_value: &str,
+        current_aliases: &str,
     ) -> Element<'_, Message> {
         if self.has_context_menu(kind, name) {
             let ctx = self.context_menu.as_ref().unwrap();
             let urls = &ctx.urls;
 
             if urls.is_empty() {
-                return text("no links").size(12).color(colors::TEXT_DIM).into();
+                return text("no urls").size(12).color(colors::TEXT_DIM).into();
             }
 
             let open_msg = if urls.len() == 1 {
@@ -1292,6 +1239,7 @@ impl Links {
                 name.to_string(),
                 name.to_string(),
                 current_value.to_string(),
+                current_aliases.to_string(),
             ))
             .padding([2, 8])
             .style(|_, _| default_button_style());
@@ -1554,7 +1502,7 @@ fn load_icon() -> Option<iced::window::Icon> {
     iced::window::icon::from_rgba(rgba, info.width, info.height).ok()
 }
 
-pub fn run(storage: Box<dyn Storage>) -> iced::Result {
+pub fn run_app(storage: Box<dyn Storage>) -> iced::Result {
     use std::cell::RefCell;
     let storage = RefCell::new(Some(storage));
 
@@ -1569,13 +1517,13 @@ pub fn run(storage: Box<dyn Storage>) -> iced::Result {
                 .borrow_mut()
                 .take()
                 .expect("boot called more than once");
-            Links::new(s)
+            Bookmarks::new(s)
         },
-        Links::update,
-        Links::view,
+        Bookmarks::update,
+        Bookmarks::view,
     )
-    .title(Links::title)
-    .theme(Links::theme)
+    .title(Bookmarks::title)
+    .theme(Bookmarks::theme)
     .antialiasing(true)
     .window(window_settings)
     .window_size(Size::new(720.0, 800.0))

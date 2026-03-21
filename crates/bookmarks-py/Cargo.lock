@@ -432,7 +432,7 @@ dependencies = [
 
 [[package]]
 name = "bookmarks-py"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dkdc-bookmarks",
  "pyo3",
@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-app"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "dkdc-bookmarks-core",
  "iced",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -895,7 +895,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-webapp"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -17,8 +17,12 @@ pub struct Args {
     pub bookmarks_file: Option<PathBuf>,
 
     /// Use global config (~/.config/bookmarks/bookmarks.toml), ignore local
-    #[arg(short, long, conflicts_with = "bookmarks_file")]
+    #[arg(short, long, conflicts_with_all = ["bookmarks_file", "local"])]
     pub global: bool,
+
+    /// Use local config (./bookmarks.toml), create if missing
+    #[arg(short, long, conflicts_with_all = ["bookmarks_file", "global"])]
+    pub local: bool,
 
     /// Open active bookmarks file in $EDITOR (use -gc for global)
     #[arg(short, long)]
@@ -34,16 +38,21 @@ pub struct Args {
     #[arg(short = 'w', long)]
     pub webapp: bool,
 
-    /// Things to open
-    pub links: Vec<String>,
+    /// Things to open (url names, aliases, or groups)
+    pub urls: Vec<String>,
 }
 
 /// Resolve which bookmarks file to use and ensure it exists:
 /// 1. --bookmarks-file flag (explicit, must exist)
-/// 2. --global flag (skip cwd, use global)
-/// 3. bookmarks.toml in cwd (local, must exist)
-/// 4. ~/.config/bookmarks/bookmarks.toml (global, auto-created)
-fn resolve_storage(bookmarks_file: Option<PathBuf>, global: bool) -> Result<TomlStorage> {
+/// 2. --local flag (cwd, auto-created)
+/// 3. --global flag (skip cwd, use global)
+/// 4. bookmarks.toml in cwd (local, must exist)
+/// 5. ~/.config/bookmarks/bookmarks.toml (global, auto-created)
+fn resolve_storage(
+    bookmarks_file: Option<PathBuf>,
+    global: bool,
+    local: bool,
+) -> Result<TomlStorage> {
     if let Some(path) = bookmarks_file {
         anyhow::ensure!(
             path.exists(),
@@ -51,6 +60,13 @@ fn resolve_storage(bookmarks_file: Option<PathBuf>, global: bool) -> Result<Toml
             path.display()
         );
         return Ok(TomlStorage::new(path));
+    }
+
+    if local {
+        let cwd_path = TomlStorage::cwd_path().context("failed to get current directory")?;
+        let storage = TomlStorage::new(cwd_path);
+        storage.init()?;
+        return Ok(storage);
     }
 
     if !global
@@ -72,31 +88,32 @@ where
 {
     let args = Args::parse_from(args);
 
-    let storage = resolve_storage(args.bookmarks_file, args.global)?;
+    let storage = resolve_storage(args.bookmarks_file, args.global, args.local)?;
 
     #[cfg(feature = "app")]
     if args.app {
-        return bookmarks_app::run(Box::new(storage)).map_err(|e| anyhow::anyhow!("{e}"));
+        return bookmarks_app::run_app(Box::new(storage)).map_err(|e| anyhow::anyhow!("{e}"));
     }
 
     #[cfg(feature = "webapp")]
     if args.webapp {
-        return bookmarks_webapp::run(Box::new(storage));
+        return bookmarks_webapp::run_webapp(Box::new(storage));
     }
 
     if args.config {
-        if let Some(path) = storage.path() {
-            edit_config(path)?;
+        match storage.path() {
+            Some(path) => edit_config(path)?,
+            None => anyhow::bail!("no bookmarks file found to edit"),
         }
         return Ok(());
     }
 
     let config = storage.load()?;
 
-    if args.links.is_empty() {
+    if args.urls.is_empty() {
         print_config(&config);
     } else {
-        open_links(&args.links, &config)?;
+        open_links(&args.urls, &config)?;
     }
 
     if let Some(path) = storage.path() {

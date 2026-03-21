@@ -26,7 +26,7 @@ crates/bookmarks-core/    # Core library (config, storage, open, strings)
   src/config.rs           # Config struct, validation, parsing, editing
   src/storage.rs          # Storage trait (backend-agnostic)
   src/toml_storage.rs     # TOML file storage implementation
-  src/open.rs             # Link resolution (alias → link → URI) and opening
+  src/open.rs             # URL resolution (name/alias → URL) and opening
   src/strings.rs          # Shared string constants and error templates
 crates/bookmarks-app/     # iced desktop app
   src/lib.rs              # Desktop UI (depends on bookmarks-core)
@@ -36,13 +36,13 @@ crates/bookmarks-webapp/  # Axum HTMX webapp (port 1414)
 crates/bookmarks-cli/     # CLI binary (dkdc-bookmarks on crates.io)
   src/main.rs             # Binary entry point
   src/lib.rs              # Re-exports core + run_cli
-  src/cli.rs              # CLI (clap) with -f, --app, --webapp flags
+  src/cli.rs              # CLI (clap) with -f, -g, -l, --app, --webapp flags
 crates/bookmarks-py/      # PyO3 bindings (cdylib)
 py/bookmarks/             # Python wrapper + type stubs (core.pyi, py.typed)
 ```
 
 Feature flags on `bookmarks-cli`: `app` (pulls in bookmarks-app), `webapp` (pulls in bookmarks-webapp).
 
-Config resolution: `-f` flag > `./bookmarks.toml` (cwd) > `~/.config/bookmarks/bookmarks.toml` (global).
+Config resolution: `-f` flag > `-l` (local, auto-create) > `./bookmarks.toml` (cwd, must exist) > `~/.config/bookmarks/bookmarks.toml` (global, auto-created).
 
-Config structure: aliases map to links, links map to URIs, groups expand to multiple aliases/links.
+Config structure: `[urls]` maps names to URLs (plain string or `{ url, aliases }` table), `[groups]` expand to multiple url names/aliases. Aliases are defined inline on their parent URL entry.

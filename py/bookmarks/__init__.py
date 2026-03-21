@@ -1,8 +1,8 @@
 import sys
 
-from bookmarks.core import run as _run
+from bookmarks.core import run_cli
 
-__all__ = ["run", "main"]
+__all__ = ["run", "run_cli", "main"]
 
 
 def run(argv: list[str] | None = None) -> None:
@@ -10,7 +10,7 @@ def run(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv
     try:
-        _run(argv)
+        run_cli(argv)
     except KeyboardInterrupt:
         sys.exit(130)
 

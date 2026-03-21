@@ -1,3 +1,3 @@
-def run(argv: list[str]) -> None:
+def run_cli(argv: list[str]) -> None:
     """Run the bookmarks CLI with the given arguments."""
     ...

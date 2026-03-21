@@ -7,7 +7,7 @@ use crate::config::Config;
 /// Operates on `Config` as a whole — fine-grained CRUD can be added
 /// as default methods later.
 pub trait Storage: Send + Sync {
-    /// Load the full config (aliases, links, groups).
+    /// Load the full config (urls, groups).
     fn load(&self) -> Result<Config>;
 
     /// Save the full config, replacing whatever was stored.

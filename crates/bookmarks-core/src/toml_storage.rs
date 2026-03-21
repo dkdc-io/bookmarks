@@ -100,11 +100,9 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         writeln!(
             f,
-            r#"[aliases]
-gh = "github"
-
-[links]
-github = "https://github.com"
+            r#"[urls]
+github = {{ url = "https://github.com", aliases = ["gh"] }}
+rust = "https://rust-lang.org"
 
 [groups]
 dev = ["gh"]
@@ -113,13 +111,16 @@ dev = ["gh"]
         .unwrap();
 
         let config = storage.load().unwrap();
-        assert_eq!(config.aliases.get("gh"), Some(&"github".to_string()));
+        assert_eq!(config.urls.get("github").unwrap().aliases(), &["gh"]);
+        assert_eq!(
+            config.urls.get("rust").unwrap().url(),
+            "https://rust-lang.org"
+        );
 
         // Save and reload
         storage.save(&config).unwrap();
         let reloaded = storage.load().unwrap();
-        assert_eq!(config.aliases, reloaded.aliases);
-        assert_eq!(config.links, reloaded.links);
+        assert_eq!(config.urls.len(), reloaded.urls.len());
         assert_eq!(config.groups, reloaded.groups);
     }
 
@@ -133,7 +134,7 @@ dev = ["gh"]
 
         assert!(path.exists());
         let config = storage.load().unwrap();
-        assert!(!config.links.is_empty());
+        assert!(!config.urls.is_empty());
     }
 
     #[test]
@@ -141,15 +142,15 @@ dev = ["gh"]
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bookmarks.toml");
 
-        fs::write(&path, "[links]\nrust = \"https://rust-lang.org\"\n").unwrap();
+        fs::write(&path, "[urls]\nrust = \"https://rust-lang.org\"\n").unwrap();
 
         let storage = TomlStorage::new(path);
         storage.init().unwrap();
 
         let config = storage.load().unwrap();
         assert_eq!(
-            config.links.get("rust"),
-            Some(&"https://rust-lang.org".to_string())
+            config.urls.get("rust").unwrap().url(),
+            "https://rust-lang.org"
         );
     }
 
