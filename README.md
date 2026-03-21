@@ -2,6 +2,11 @@
 
 Bookmarks in your filesystem.
 
+[![PyPI](https://img.shields.io/pypi/v/dkdc-bookmarks?color=blue)](https://pypi.org/project/dkdc-bookmarks/)
+[![crates.io](https://img.shields.io/crates/v/dkdc-bookmarks?color=blue)](https://crates.io/crates/dkdc-bookmarks)
+[![CI](https://img.shields.io/github/actions/workflow/status/lostmygithubaccount/bookmarks/ci.yml?branch=main&label=CI)](https://github.com/lostmygithubaccount/bookmarks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-8A2BE2.svg)](https://github.com/lostmygithubaccount/bookmarks/blob/main/LICENSE)
+
 ## Install
 
 uv (recommended):
