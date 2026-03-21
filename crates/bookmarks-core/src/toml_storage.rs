@@ -142,7 +142,11 @@ dev = ["gh"]
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bookmarks.toml");
 
-        fs::write(&path, "[urls]\ndkdc-bookmarks = \"https://github.com/lostmygithubaccount/bookmarks\"\n").unwrap();
+        fs::write(
+            &path,
+            "[urls]\ndkdc-bookmarks = \"https://github.com/lostmygithubaccount/bookmarks\"\n",
+        )
+        .unwrap();
 
         let storage = TomlStorage::new(path);
         storage.init().unwrap();
