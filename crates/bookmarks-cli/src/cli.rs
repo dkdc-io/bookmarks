@@ -53,12 +53,11 @@ fn resolve_storage(bookmarks_file: Option<PathBuf>, global: bool) -> Result<Toml
         return Ok(TomlStorage::new(path));
     }
 
-    if !global {
-        if let Some(cwd_path) = TomlStorage::cwd_path()
-            && cwd_path.exists()
-        {
-            return Ok(TomlStorage::new(cwd_path));
-        }
+    if !global
+        && let Some(cwd_path) = TomlStorage::cwd_path()
+        && cwd_path.exists()
+    {
+        return Ok(TomlStorage::new(cwd_path));
     }
 
     let storage = TomlStorage::with_default_path()?;
