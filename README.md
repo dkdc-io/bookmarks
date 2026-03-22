@@ -13,7 +13,7 @@ Bookmarks in your filesystem.
 uv (recommended):
 
 ```bash
-uv tool install --from dkdc-bookmarks bookmarks
+uv tool install dkdc-bookmarks
 ```
 
 cargo:
