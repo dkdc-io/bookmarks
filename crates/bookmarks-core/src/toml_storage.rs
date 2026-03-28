@@ -102,7 +102,7 @@ mod tests {
             f,
             r#"[urls]
 github = {{ url = "https://github.com", aliases = ["gh"] }}
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 
 [groups]
 dev = ["gh"]
@@ -114,7 +114,7 @@ dev = ["gh"]
         assert_eq!(config.urls.get("github").unwrap().aliases(), &["gh"]);
         assert_eq!(
             config.urls.get("dkdc-bookmarks").unwrap().url(),
-            "https://github.com/lostmygithubaccount/bookmarks"
+            "https://github.com/dkdc-io/bookmarks"
         );
 
         // Save and reload
@@ -144,7 +144,7 @@ dev = ["gh"]
 
         fs::write(
             &path,
-            "[urls]\ndkdc-bookmarks = \"https://github.com/lostmygithubaccount/bookmarks\"\n",
+            "[urls]\ndkdc-bookmarks = \"https://github.com/dkdc-io/bookmarks\"\n",
         )
         .unwrap();
 
@@ -154,7 +154,7 @@ dev = ["gh"]
         let config = storage.load().unwrap();
         assert_eq!(
             config.urls.get("dkdc-bookmarks").unwrap().url(),
-            "https://github.com/lostmygithubaccount/bookmarks"
+            "https://github.com/dkdc-io/bookmarks"
         );
     }
 

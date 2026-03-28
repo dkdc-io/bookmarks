@@ -81,7 +81,7 @@ mod tests {
         );
         urls.insert(
             "dkdc-bookmarks".to_string(),
-            UrlEntry::Simple("https://github.com/lostmygithubaccount/bookmarks".to_string()),
+            UrlEntry::Simple("https://github.com/dkdc-io/bookmarks".to_string()),
         );
 
         let mut groups = HashMap::new();
@@ -104,7 +104,7 @@ mod tests {
     fn test_url_name_resolves_to_uri() {
         let config = test_config();
         let uri = resolve_uri("dkdc-bookmarks", &config).unwrap();
-        assert_eq!(uri, "https://github.com/lostmygithubaccount/bookmarks");
+        assert_eq!(uri, "https://github.com/dkdc-io/bookmarks");
     }
 
     #[test]

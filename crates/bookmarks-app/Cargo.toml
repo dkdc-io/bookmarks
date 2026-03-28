@@ -4,7 +4,7 @@ version = "0.3.3"
 edition = "2024"
 authors = ["Cody <cody@dkdc.dev>"]
 description = "Desktop app for bookmarks (iced)"
-repository = "https://github.com/lostmygithubaccount/bookmarks"
+repository = "https://github.com/dkdc-io/bookmarks"
 license = "MIT"
 readme = "README.md"
 

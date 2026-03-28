@@ -1,10 +1,10 @@
 # Bookmarks
 
-[![GitHub Release](https://img.shields.io/github/v/release/lostmygithubaccount/bookmarks?color=blue)](https://github.com/lostmygithubaccount/bookmarks/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/dkdc-io/bookmarks?color=blue)](https://github.com/dkdc-io/bookmarks/releases)
 [![PyPI](https://img.shields.io/pypi/v/dkdc-bookmarks?color=blue)](https://pypi.org/project/dkdc-bookmarks/)
 [![crates.io](https://img.shields.io/crates/v/dkdc-bookmarks?color=blue)](https://crates.io/crates/dkdc-bookmarks)
-[![CI](https://img.shields.io/github/actions/workflow/status/lostmygithubaccount/bookmarks/ci.yml?branch=main&label=CI)](https://github.com/lostmygithubaccount/bookmarks/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-8A2BE2.svg)](https://github.com/lostmygithubaccount/bookmarks/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/dkdc-io/bookmarks/ci.yml?branch=main&label=CI)](https://github.com/dkdc-io/bookmarks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-8A2BE2.svg)](https://github.com/dkdc-io/bookmarks/blob/main/LICENSE)
 
 Bookmarks in your filesystem.
 
@@ -47,7 +47,7 @@ Example:
 
 ```toml
 [urls]
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 github = { url = "https://github.com", aliases = ["gh"] }
 
 [urls.linkedin]
