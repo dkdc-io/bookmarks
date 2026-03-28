@@ -379,10 +379,7 @@ dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         let entry = config.urls.get("dkdc-bookmarks").unwrap();
-        assert_eq!(
-            entry.url(),
-            "https://github.com/dkdc-io/bookmarks"
-        );
+        assert_eq!(entry.url(), "https://github.com/dkdc-io/bookmarks");
         assert!(entry.aliases().is_empty());
     }
 
