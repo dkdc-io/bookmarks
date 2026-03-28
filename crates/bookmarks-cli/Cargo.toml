@@ -4,8 +4,8 @@ version = "0.3.3"
 edition = "2024"
 authors = ["Cody <cody@dkdc.dev>"]
 description = "Bookmarks in your filesystem"
-repository = "https://github.com/lostmygithubaccount/bookmarks"
-homepage = "https://github.com/lostmygithubaccount/bookmarks"
+repository = "https://github.com/dkdc-io/bookmarks"
+homepage = "https://github.com/dkdc-io/bookmarks"
 license = "MIT"
 readme = "../../README.md"
 

@@ -10,7 +10,7 @@ const DEFAULT_EDITOR: &str = "vi";
 /// In TOML this means all three forms work:
 /// ```toml
 /// [urls]
-/// dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+/// dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 /// github = { url = "https://github.com", aliases = ["gh"] }
 ///
 /// [urls.linkedin]
@@ -85,11 +85,11 @@ pub struct Config {
     pub groups: HashMap<String, Vec<String>>,
 }
 
-pub const DEFAULT_CONFIG: &str = r#"# https://github.com/lostmygithubaccount/bookmarks
+pub const DEFAULT_CONFIG: &str = r#"# https://github.com/dkdc-io/bookmarks
 # bookmarks config file
 
 [urls]
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 github = { url = "https://github.com", aliases = ["gh"] }
 
 [urls.linkedin]
@@ -375,13 +375,13 @@ dev = ["gh"]
     fn test_parse_simple_url() {
         let toml = r#"
 [urls]
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         let entry = config.urls.get("dkdc-bookmarks").unwrap();
         assert_eq!(
             entry.url(),
-            "https://github.com/lostmygithubaccount/bookmarks"
+            "https://github.com/dkdc-io/bookmarks"
         );
         assert!(entry.aliases().is_empty());
     }
@@ -403,7 +403,7 @@ aliases = ["li", "ln"]
     fn test_parse_hybrid_config() {
         let toml = r#"
 [urls]
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 github = { url = "https://github.com", aliases = ["gh"] }
 
 [urls.linkedin]
@@ -417,7 +417,7 @@ socials = ["gh", "linkedin"]
         assert_eq!(config.urls.len(), 3);
         assert_eq!(
             config.urls.get("dkdc-bookmarks").unwrap().url(),
-            "https://github.com/lostmygithubaccount/bookmarks"
+            "https://github.com/dkdc-io/bookmarks"
         );
         assert_eq!(config.urls.get("github").unwrap().aliases(), &["gh"]);
         assert_eq!(config.urls.get("linkedin").unwrap().aliases(), &["li"]);
@@ -470,7 +470,7 @@ socials = ["gh", "linkedin"]
         let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
         assert_eq!(
             config.resolve("dkdc-bookmarks"),
-            Some("https://github.com/lostmygithubaccount/bookmarks")
+            Some("https://github.com/dkdc-io/bookmarks")
         );
     }
 
@@ -504,7 +504,7 @@ b = { url = "https://b.com", aliases = ["x"] }
         let toml = r#"
 [urls]
 github = { url = "https://github.com", aliases = ["dkdc-bookmarks"] }
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         let warnings = config.validate();
@@ -661,7 +661,7 @@ a = "https://a.com"
         let toml = r#"
 [urls]
 github = { url = "https://github.com", aliases = ["gh", "g"] }
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 
 [groups]
 dev = ["gh", "github"]
@@ -679,7 +679,7 @@ dev = ["gh", "github"]
         let toml = r#"
 [urls]
 github = { url = "https://github.com", aliases = ["gh"] }
-dkdc-bookmarks = "https://github.com/lostmygithubaccount/bookmarks"
+dkdc-bookmarks = "https://github.com/dkdc-io/bookmarks"
 
 [groups]
 dev = ["gh", "dkdc-bookmarks"]

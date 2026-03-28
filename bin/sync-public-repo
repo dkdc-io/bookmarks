@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mirror bookmarks source from the dkdc monorepo to lostmygithubaccount/bookmarks.
+# Mirror bookmarks source from the dkdc monorepo to dkdc-io/bookmarks.
 # Uses rsync to copy files, then commits and pushes to the public repo.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOOKMARKS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PUBLIC_REPO="lostmygithubaccount/bookmarks"
+PUBLIC_REPO="dkdc-io/bookmarks"
 CLONE_DIR="${BOOKMARKS_DIR}/.sync-repo"
 
 info()  { printf '\033[1;35m[sync]\033[0m %s\n' "$*"; }
@@ -61,7 +61,7 @@ else
     git push -u origin main
 fi
 
-info "done — https://github.com/lostmygithubaccount/bookmarks"
+info "done — https://github.com/dkdc-io/bookmarks"
 
 # ──────────────────────────────────────
 # optionally tag a release
