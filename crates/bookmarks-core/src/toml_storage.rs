@@ -163,4 +163,30 @@ dev = ["gh"]
         let storage = TomlStorage::new(PathBuf::from("/tmp/test.toml"));
         assert_eq!(storage.backend_name(), "toml");
     }
+
+    #[test]
+    fn test_load_nonexistent_file() {
+        let storage = TomlStorage::new(PathBuf::from("/nonexistent/path/bookmarks.toml"));
+        assert!(storage.load().is_err());
+    }
+
+    #[test]
+    fn test_load_malformed_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bookmarks.toml");
+        fs::write(&path, "this is not valid { toml").unwrap();
+        let storage = TomlStorage::new(path);
+        assert!(storage.load().is_err());
+    }
+
+    #[test]
+    fn test_load_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bookmarks.toml");
+        fs::write(&path, "").unwrap();
+        let storage = TomlStorage::new(path);
+        let config = storage.load().unwrap();
+        assert!(config.urls.is_empty());
+        assert!(config.groups.is_empty());
+    }
 }

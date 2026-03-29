@@ -1,8 +1,8 @@
 import sys
 
-from bookmarks.core import run_cli
+from bookmarks.core import Config, TomlStorage, UrlEntry, run_cli
 
-__all__ = ["run", "run_cli", "main"]
+__all__ = ["run", "run_cli", "main", "Config", "UrlEntry", "TomlStorage"]
 
 
 def run(argv: list[str] | None = None) -> None:

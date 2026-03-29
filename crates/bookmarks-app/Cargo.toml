@@ -1,6 +1,6 @@
 [package]
 name = "dkdc-bookmarks-app"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
 authors = ["Cody <cody@dkdc.dev>"]
 description = "Desktop app for bookmarks (iced)"
@@ -13,7 +13,7 @@ name = "bookmarks_app"
 path = "src/lib.rs"
 
 [dependencies]
-dkdc-bookmarks-core = { version = "0.3.3", path = "../bookmarks-core" }
+dkdc-bookmarks-core = { version = "0.4.0", path = "../bookmarks-core" }
 iced = { version = "0.14", features = ["tokio", "svg"] }
 open = "5"
 png = "0.17"

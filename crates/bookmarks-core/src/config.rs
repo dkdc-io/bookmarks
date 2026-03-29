@@ -77,7 +77,7 @@ impl UrlEntry {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub urls: HashMap<String, UrlEntry>,
@@ -754,5 +754,39 @@ dev = ["gh", "dkdc-bookmarks"]
         assert!(config.delete_url("nope").is_err());
         assert!(config.delete_alias("nope").is_err());
         assert!(config.delete_group("nope").is_err());
+    }
+
+    #[test]
+    fn test_parse_malformed_toml() {
+        assert!(toml::from_str::<Config>("this is not valid { toml").is_err());
+    }
+
+    #[test]
+    fn test_parse_url_wrong_type() {
+        let toml = "[urls]\ngithub = 42";
+        assert!(toml::from_str::<Config>(toml).is_err());
+    }
+
+    #[test]
+    fn test_parse_missing_url_in_full_entry() {
+        let toml = "[urls.gh]\naliases = [\"x\"]";
+        assert!(toml::from_str::<Config>(toml).is_err());
+    }
+
+    #[test]
+    fn test_parse_groups_only_no_urls() {
+        let toml = "[groups]\ndev = [\"gh\"]";
+        let config: Config = toml::from_str(toml).unwrap();
+        assert!(config.urls.is_empty());
+        let warnings = config.validate();
+        assert!(warnings.iter().any(|w| w.contains("gh")));
+    }
+
+    #[test]
+    fn test_parse_extra_sections_ignored() {
+        let toml = "[urls]\ngithub = \"https://github.com\"\n\n[metadata]\nauthor = \"test\"";
+        // Config doesn't use deny_unknown_fields, so extra sections are ignored
+        let result = toml::from_str::<Config>(toml);
+        assert!(result.is_ok());
     }
 }
