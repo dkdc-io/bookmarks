@@ -6,7 +6,10 @@ echo "Running ruff..."
 uv run --only-group dev ruff check .
 uv run --only-group dev ruff format --check .
 
+echo "Building Python bindings for type checking..."
+uv run maturin develop
+
 echo "Running ty..."
-uv run --only-group dev ty check
+uv run ty check
 
 echo "Python checks passed!"
