@@ -136,7 +136,19 @@ fn page(body: &str) -> String {
     .modal .btn-cancel:hover {{ border-color: #666680; color: #edeedf; }}
     .modal .btn-confirm {{ background: #3a1a2a; border-color: #ff7373; color: #ff7373; padding: 6px 16px; font-size: 0.8rem; }}
     .modal .btn-confirm:hover {{ background: #4a2030; border-color: #ffa0a0; color: #ffa0a0; }}
-    @media (max-width: 680px) {{ body {{ width: auto; padding: 24px 16px; }} }}
+    @media (max-width: 680px) {{
+      body {{ width: auto; padding: 24px 16px; }}
+      .toolbar {{ flex-wrap: wrap; }}
+      .toolbar input {{ width: 100%; }}
+      .tabs {{ width: 100%; }}
+      .tab {{ flex: 1; text-align: center; }}
+      form.inline {{ flex-wrap: wrap; }}
+      form.inline input:first-of-type {{ flex: 1 1 100%; }}
+      form.inline input:nth-of-type(2) {{ flex: 1 1 auto; }}
+      .btn-add {{ flex-shrink: 0; }}
+      col.col-name {{ width: 100px; }}
+      col.col-actions {{ width: 60px; }}
+    }}
   </style>
 </head>
 <body>
