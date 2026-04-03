@@ -10,7 +10,15 @@ Bookmarks in your filesystem.
 
 ## Install
 
-uv (recommended):
+Recommended:
+
+```bash
+curl -LsSf https://dkdc.sh/bookmarks/install.sh | sh
+```
+
+Pre-built binaries are available for Linux and macOS via Python (`uv`). Windows users should install via `cargo` or use macOS/Linux.
+
+uv:
 
 ```bash
 uv tool install dkdc-bookmarks
@@ -20,6 +28,12 @@ cargo:
 
 ```bash
 cargo install dkdc-bookmarks --features app,webapp
+```
+
+Verify installation:
+
+```bash
+bookmarks --version
 ```
 
 You can use `uvx` to run it without installing:
