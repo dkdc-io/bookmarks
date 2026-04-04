@@ -124,6 +124,58 @@ def test_toml_storage_roundtrip():
         assert reloaded.resolve("test") == "https://test.com"
 
 
+def test_config_rename_alias():
+    c = Config.from_toml(TEST_CONFIG)
+    c.rename_alias("gh", "github-shortcut")
+    assert c.resolve("github-shortcut") == "https://github.com"
+    assert c.resolve("gh") is None
+    # cascades to groups
+    assert "github-shortcut" in c.groups["dev"]
+    assert "gh" not in c.groups["dev"]
+
+
+def test_config_delete_alias():
+    c = Config.from_toml(TEST_CONFIG)
+    c.delete_alias("gh")
+    assert not c.contains("gh")
+    assert c.contains("github")  # url itself still exists
+    assert c.resolve("github") == "https://github.com"
+    # group reference to alias removed
+    assert "gh" not in c.groups["dev"]
+
+
+def test_config_rename_group():
+    c = Config.from_toml(TEST_CONFIG)
+    c.rename_group("dev", "development")
+    assert "development" in c.groups
+    assert "dev" not in c.groups
+    assert c.groups["development"] == ["gh", "dkdc"]
+
+
+def test_config_delete_group():
+    c = Config.from_toml(TEST_CONFIG)
+    c.delete_group("dev")
+    assert "dev" not in c.groups
+
+
+def test_config_delete_url_not_found():
+    c = Config.from_toml(TEST_CONFIG)
+    try:
+        c.delete_url("nonexistent")
+        assert False, "expected error"
+    except RuntimeError:
+        pass
+
+
+def test_config_rename_url_collision():
+    c = Config.from_toml(TEST_CONFIG)
+    try:
+        c.rename_url("dkdc", "github")
+        assert False, "expected error"
+    except RuntimeError:
+        pass
+
+
 def test_toml_storage_default_path():
     path = TomlStorage.default_path()
     assert "bookmarks" in path

@@ -220,7 +220,10 @@ impl Config {
             .with_context(|| format!("alias '{old}' not found"))?
             .to_string();
 
-        let entry = self.urls.get_mut(&url_name).unwrap();
+        let entry = self
+            .urls
+            .get_mut(&url_name)
+            .context("internal error: alias owner not found in urls")?;
         entry.remove_alias(old);
         entry.add_alias(new.to_string());
 
@@ -260,7 +263,10 @@ impl Config {
             .with_context(|| format!("alias '{alias}' not found"))?
             .to_string();
 
-        self.urls.get_mut(&url_name).unwrap().remove_alias(alias);
+        self.urls
+            .get_mut(&url_name)
+            .context("internal error: alias owner not found in urls")?
+            .remove_alias(alias);
 
         for entries in self.groups.values_mut() {
             entries.retain(|e| e != alias);
