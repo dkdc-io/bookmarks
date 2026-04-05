@@ -11,6 +11,8 @@ use bookmarks_core::config::{Config, UrlEntry};
 use bookmarks_core::storage::Storage;
 use bookmarks_core::strings;
 
+const HTMX_URL: &str = "https://unpkg.com/htmx.org@2.0.4";
+
 struct AppState {
     storage: Mutex<Box<dyn Storage>>,
 }
@@ -55,7 +57,7 @@ fn page(body: &str) -> String {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>bookmarks</title>
-  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="{HTMX_URL}"></script>
   <style>
     * {{ margin: 0; padding: 0; box-sizing: border-box; }}
     html {{ background: #1a1a29; }}
