@@ -813,6 +813,199 @@ fn create_router(storage: Box<dyn Storage>) -> Router {
         .with_state(state)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    /// In-memory storage backend for tests.
+    struct MemStorage {
+        config: Mutex<Config>,
+    }
+
+    impl MemStorage {
+        fn new() -> Self {
+            Self {
+                config: Mutex::new(Config::default()),
+            }
+        }
+    }
+
+    impl Storage for MemStorage {
+        fn load(&self) -> anyhow::Result<Config> {
+            Ok(self.config.lock().unwrap().clone())
+        }
+
+        fn save(&self, config: &Config) -> anyhow::Result<()> {
+            *self.config.lock().unwrap() = config.clone();
+            Ok(())
+        }
+
+        fn init(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn backend_name(&self) -> &str {
+            "memory"
+        }
+    }
+
+    fn test_app() -> Router {
+        create_router(Box::new(MemStorage::new()))
+    }
+
+    async fn response_status(
+        app: Router,
+        method: &str,
+        uri: &str,
+        body: Option<&str>,
+    ) -> (axum::http::StatusCode, String) {
+        let req = axum::http::Request::builder().method(method).uri(uri);
+
+        let req = if let Some(b) = body {
+            req.header("content-type", "application/x-www-form-urlencoded")
+                .body(Body::from(b.to_string()))
+                .unwrap()
+        } else {
+            req.body(Body::empty()).unwrap()
+        };
+
+        let resp = app.oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let text = String::from_utf8_lossy(&bytes).to_string();
+        (status, text)
+    }
+
+    #[tokio::test]
+    async fn get_index_returns_200() {
+        let (status, body) = response_status(test_app(), "GET", "/", None).await;
+        assert_eq!(status, 200);
+        assert!(body.contains("Bookmarks"));
+    }
+
+    #[tokio::test]
+    async fn get_content_returns_200() {
+        let (status, _) = response_status(test_app(), "GET", "/content", None).await;
+        assert_eq!(status, 200);
+    }
+
+    #[tokio::test]
+    async fn add_and_delete_url() {
+        let app = test_app();
+
+        // Add a URL
+        let (status, body) = response_status(
+            app.clone(),
+            "POST",
+            "/add/url",
+            Some("name=rust&url=https%3A%2F%2Frust-lang.org"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(body.contains("rust"));
+        assert!(body.contains("https://rust-lang.org"));
+
+        // Verify it appears on the index
+        let (_, body) = response_status(app.clone(), "GET", "/", None).await;
+        assert!(body.contains("rust-lang.org"));
+
+        // Delete it
+        let (status, body) = response_status(app.clone(), "POST", "/delete/url/rust", None).await;
+        assert_eq!(status, 200);
+        assert!(!body.contains("rust-lang.org"));
+    }
+
+    #[tokio::test]
+    async fn add_url_empty_fields_is_noop() {
+        let app = test_app();
+        let (status, body) =
+            response_status(app.clone(), "POST", "/add/url", Some("name=&url=")).await;
+        assert_eq!(status, 200);
+        assert!(body.contains("no urls yet"));
+    }
+
+    #[tokio::test]
+    async fn add_group_with_valid_entries() {
+        let app = test_app();
+
+        // First add a URL so the group can reference it
+        let _ = response_status(
+            app.clone(),
+            "POST",
+            "/add/url",
+            Some("name=gh&url=https%3A%2F%2Fgithub.com"),
+        )
+        .await;
+
+        // Add a group referencing the URL
+        let (status, body) = response_status(
+            app.clone(),
+            "POST",
+            "/add/group",
+            Some("name=dev&entries=gh"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        assert!(body.contains("dev"));
+    }
+
+    #[tokio::test]
+    async fn add_group_with_missing_entries_shows_error() {
+        let app = test_app();
+
+        // Try to add a group referencing a non-existent URL
+        let (status, body) = response_status(
+            app.clone(),
+            "POST",
+            "/add/group",
+            Some("name=bad&entries=nonexistent"),
+        )
+        .await;
+        assert_eq!(status, 200);
+        // Should show an error banner
+        assert!(body.contains("error-banner"));
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_url_shows_error() {
+        let app = test_app();
+        let (status, body) = response_status(app.clone(), "POST", "/delete/url/nope", None).await;
+        assert_eq!(status, 200);
+        assert!(body.contains("error-banner"));
+    }
+
+    #[tokio::test]
+    async fn edit_url_rename() {
+        let app = test_app();
+
+        // Add a URL
+        let _ = response_status(
+            app.clone(),
+            "POST",
+            "/add/url",
+            Some("name=old&url=https%3A%2F%2Fexample.com"),
+        )
+        .await;
+
+        // Rename it
+        let (status, body) =
+            response_status(app.clone(), "POST", "/edit/url/old", Some("new_name=fresh")).await;
+        assert_eq!(status, 200);
+        assert!(body.contains("fresh"));
+        assert!(!body.contains(">old<"));
+    }
+
+    #[tokio::test]
+    async fn sort_by_url() {
+        let app = test_app();
+        let (status, _) = response_status(app.clone(), "GET", "/content?sort=url", None).await;
+        assert_eq!(status, 200);
+    }
+}
+
 pub fn run_webapp(storage: Box<dyn Storage>) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
