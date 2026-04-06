@@ -892,9 +892,11 @@ dependencies = [
  "anyhow",
  "axum",
  "dkdc-bookmarks-core",
+ "http-body-util",
  "open",
  "serde",
  "tokio",
+ "tower",
 ]
 
 [[package]]
