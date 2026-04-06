@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 const DEFAULT_EDITOR: &str = "vi";
@@ -155,6 +155,13 @@ impl Config {
             }
         }
 
+        // Check for empty URLs
+        for (url_name, entry) in &self.urls {
+            if entry.url().is_empty() {
+                warnings.push(format!("url '{url_name}' has an empty URL string"));
+            }
+        }
+
         // Check group entries
         for (group, entries) in &self.groups {
             for entry in entries {
@@ -163,6 +170,69 @@ impl Config {
                         "group '{group}' contains '{entry}' which is not a url name or alias"
                     ));
                 }
+            }
+        }
+
+        // Check for circular group references
+        // Groups don't reference other groups in the current model, but a group
+        // entry that matches its own group name (e.g., dev = ["dev"]) is likely
+        // a mistake — the entry resolves as a url/alias, not a group expansion,
+        // so flag self-references as warnings.
+        for (group, entries) in &self.groups {
+            if entries.iter().any(|e| e == group) {
+                warnings.push(format!(
+                    "group '{group}' references itself, which is likely a mistake"
+                ));
+            }
+        }
+
+        // Detect indirect cycles: group A contains entry X where X is also a
+        // group name, and group X contains entry Y where Y == A.
+        // Build adjacency: group -> set of group names that appear in its entries.
+        let group_names: HashSet<&str> = self.groups.keys().map(|k| k.as_str()).collect();
+        let adj: HashMap<&str, Vec<&str>> = self
+            .groups
+            .iter()
+            .map(|(g, entries)| {
+                let refs: Vec<&str> = entries
+                    .iter()
+                    .filter(|e| group_names.contains(e.as_str()) && e.as_str() != g.as_str())
+                    .map(|e| e.as_str())
+                    .collect();
+                (g.as_str(), refs)
+            })
+            .collect();
+
+        // DFS cycle detection
+        let mut visited: HashSet<&str> = HashSet::new();
+        let mut on_stack: HashSet<&str> = HashSet::new();
+
+        fn dfs<'a>(
+            node: &'a str,
+            adj: &HashMap<&'a str, Vec<&'a str>>,
+            visited: &mut HashSet<&'a str>,
+            on_stack: &mut HashSet<&'a str>,
+            warnings: &mut Vec<String>,
+        ) {
+            visited.insert(node);
+            on_stack.insert(node);
+            if let Some(neighbors) = adj.get(node) {
+                for &next in neighbors {
+                    if on_stack.contains(next) {
+                        warnings.push(format!(
+                            "group '{node}' and group '{next}' form a circular reference"
+                        ));
+                    } else if !visited.contains(next) {
+                        dfs(next, adj, visited, on_stack, warnings);
+                    }
+                }
+            }
+            on_stack.remove(node);
+        }
+
+        for &group in &group_names {
+            if !visited.contains(group) {
+                dfs(group, &adj, &mut visited, &mut on_stack, &mut warnings);
             }
         }
 
@@ -791,5 +861,72 @@ dev = ["gh", "dkdc-bookmarks"]
         // Config doesn't use deny_unknown_fields, so extra sections are ignored
         let result = toml::from_str::<Config>(toml);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_empty_url_simple_warns() {
+        let toml = r#"
+[urls]
+empty = ""
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let warnings = config.validate();
+        assert!(warnings.iter().any(|w| w.contains("empty URL string")));
+    }
+
+    #[test]
+    fn test_empty_url_full_warns() {
+        let toml = r#"
+[urls]
+empty = { url = "", aliases = ["e"] }
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let warnings = config.validate();
+        assert!(warnings.iter().any(|w| w.contains("empty URL string")));
+    }
+
+    #[test]
+    fn test_nonempty_url_no_empty_warning() {
+        let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        let warnings = config.validate();
+        assert!(!warnings.iter().any(|w| w.contains("empty URL string")));
+    }
+
+    #[test]
+    fn test_self_referencing_group_warns() {
+        let toml = r#"
+[urls]
+dev = "https://dev.example.com"
+
+[groups]
+dev = ["dev"]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let warnings = config.validate();
+        assert!(warnings.iter().any(|w| w.contains("references itself")));
+    }
+
+    #[test]
+    fn test_circular_group_reference_warns() {
+        let toml = r#"
+[urls]
+a = "https://a.com"
+b = "https://b.com"
+
+[groups]
+a = ["b"]
+b = ["a"]
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        let warnings = config.validate();
+        assert!(warnings.iter().any(|w| w.contains("circular reference")));
+    }
+
+    #[test]
+    fn test_no_circular_warning_for_valid_groups() {
+        let config: Config = toml::from_str(DEFAULT_CONFIG).unwrap();
+        let warnings = config.validate();
+        assert!(!warnings.iter().any(|w| w.contains("circular")));
+        assert!(!warnings.iter().any(|w| w.contains("references itself")));
     }
 }
