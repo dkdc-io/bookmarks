@@ -63,6 +63,12 @@ for f in "${TOML_FILES[@]}"; do
   fi
 done
 
+TAURI_CURRENT=$(grep -m1 '"version": ' crates/bookmarks-app/tauri.conf.json | sed 's/.*"version": "\(.*\)".*/\1/')
+if [ "$TAURI_CURRENT" != "$CURRENT" ]; then
+  echo "ERROR: version mismatch: pyproject.toml=$CURRENT but crates/bookmarks-app/tauri.conf.json=$TAURI_CURRENT" >&2
+  exit 1
+fi
+
 # ---------- compute new version ----------
 
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
@@ -82,15 +88,21 @@ for f in "${TOML_FILES[@]}"; do
   echo "  updated $f"
 done
 
+sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW\"/" crates/bookmarks-app/tauri.conf.json
+echo "  updated crates/bookmarks-app/tauri.conf.json"
+
 # update inter-crate dependency versions
 for f in crates/bookmarks-app/Cargo.toml crates/bookmarks-webapp/Cargo.toml crates/bookmarks-cli/Cargo.toml; do
   sed -i '' "s/dkdc-bookmarks-core = { version = \"$CURRENT\"/dkdc-bookmarks-core = { version = \"$NEW\"/" "$f"
   echo "  updated dep version in $f"
 done
+for f in crates/bookmarks-app/Cargo.toml crates/bookmarks-cli/Cargo.toml; do
+  sed -i '' "s/dkdc-bookmarks-webapp = { version = \"$CURRENT\"/dkdc-bookmarks-webapp = { version = \"$NEW\"/" "$f"
+  echo "  updated webapp dep version in $f"
+done
 for f in crates/bookmarks-cli/Cargo.toml; do
   sed -i '' "s/dkdc-bookmarks-app = { version = \"$CURRENT\"/dkdc-bookmarks-app = { version = \"$NEW\"/" "$f"
-  sed -i '' "s/dkdc-bookmarks-webapp = { version = \"$CURRENT\"/dkdc-bookmarks-webapp = { version = \"$NEW\"/" "$f"
-  echo "  updated dep versions in $f"
+  echo "  updated app dep version in $f"
 done
 
 # ---------- regenerate lock files ----------

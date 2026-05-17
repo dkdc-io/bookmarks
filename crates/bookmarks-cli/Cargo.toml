@@ -1,6 +1,6 @@
 [package]
 name = "dkdc-bookmarks"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 authors = ["Cody <cody@dkdc.io>"]
 description = "Bookmarks in your filesystem"
@@ -18,14 +18,14 @@ name = "bookmarks"
 path = "src/main.rs"
 
 [features]
-app = ["dep:dkdc-bookmarks-app"]
+app = ["webapp", "dep:dkdc-bookmarks-app"]
 webapp = ["dep:dkdc-bookmarks-webapp"]
 
 [dependencies]
 anyhow = "1"
-dkdc-bookmarks-core = { version = "0.4.1", path = "../bookmarks-core" }
-dkdc-bookmarks-app = { version = "0.4.1", path = "../bookmarks-app", optional = true }
-dkdc-bookmarks-webapp = { version = "0.4.1", path = "../bookmarks-webapp", optional = true }
+dkdc-bookmarks-core = { version = "0.5.0", path = "../bookmarks-core" }
+dkdc-bookmarks-app = { version = "0.5.0", path = "../bookmarks-app", optional = true }
+dkdc-bookmarks-webapp = { version = "0.5.0", path = "../bookmarks-webapp", optional = true }
 clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]

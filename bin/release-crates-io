@@ -5,11 +5,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 echo "Publishing dkdc-bookmarks-core to crates.io..."
 cargo publish -p dkdc-bookmarks-core
 
-echo "Publishing dkdc-bookmarks-app to crates.io..."
-cargo publish -p dkdc-bookmarks-app
-
 echo "Publishing dkdc-bookmarks-webapp to crates.io..."
 cargo publish -p dkdc-bookmarks-webapp
+
+echo "Publishing dkdc-bookmarks-app to crates.io..."
+cargo publish -p dkdc-bookmarks-app
 
 echo "Publishing dkdc-bookmarks to crates.io..."
 cargo publish -p dkdc-bookmarks
