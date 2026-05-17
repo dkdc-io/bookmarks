@@ -1,6 +1,6 @@
 [package]
 name = "dkdc-bookmarks-app"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 authors = ["Cody <cody@dkdc.io>"]
 description = "Tauri desktop shell for bookmarks"
@@ -15,8 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
-dkdc-bookmarks-core = { version = "0.5.0", path = "../bookmarks-core" }
-dkdc-bookmarks-webapp = { version = "0.5.0", path = "../bookmarks-webapp" }
+dkdc-bookmarks-core = { version = "0.5.1", path = "../bookmarks-core" }
+dkdc-bookmarks-webapp = { version = "0.5.1", path = "../bookmarks-webapp" }
 open = "5"
 tauri = "2.11.1"
 

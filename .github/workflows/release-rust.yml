@@ -38,24 +38,45 @@ jobs:
           restore-keys: crates-io-
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
-      - uses: dkdc-io/.github/actions/publish-crate@v1
-        with:
-          crate: dkdc-bookmarks-core
+      - name: Publish crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - uses: dkdc-io/.github/actions/publish-crate@v1
-        with:
-          crate: dkdc-bookmarks-webapp
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - uses: dkdc-io/.github/actions/publish-crate@v1
-        with:
-          crate: dkdc-bookmarks-app
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-      - uses: dkdc-io/.github/actions/publish-crate@v1
-        with:
-          crate: dkdc-bookmarks
-          last: "true"
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+
+          crate_version_exists() {
+            local crate="$1"
+            curl -fsSL "https://crates.io/api/v1/crates/${crate}/versions" \
+              | jq -e --arg version "$version" '.versions[] | select(.num == $version and (.yanked | not))' >/dev/null
+          }
+
+          wait_for_crate_version() {
+            local crate="$1"
+            for _ in {1..12}; do
+              if crate_version_exists "$crate"; then
+                return 0
+              fi
+              sleep 10
+            done
+            echo "::error::${crate} ${version} was not visible on crates.io after publishing"
+            return 1
+          }
+
+          publish_crate() {
+            local crate="$1"
+            if crate_version_exists "$crate"; then
+              echo "${crate} ${version} already exists on crates.io, skipping publish"
+            else
+              echo "Publishing ${crate} ${version}..."
+              cargo publish -p "$crate"
+            fi
+            wait_for_crate_version "$crate"
+          }
+
+          publish_crate dkdc-bookmarks-core
+          publish_crate dkdc-bookmarks-webapp
+          publish_crate dkdc-bookmarks-app
+          publish_crate dkdc-bookmarks
