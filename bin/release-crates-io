@@ -2,16 +2,40 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-echo "Publishing dkdc-bookmarks-core to crates.io..."
-cargo publish -p dkdc-bookmarks-core
+version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "dkdc-bookmarks") | .version')"
 
-echo "Publishing dkdc-bookmarks-webapp to crates.io..."
-cargo publish -p dkdc-bookmarks-webapp
+crate_version_exists() {
+  local crate="$1"
+  curl -fsSL "https://crates.io/api/v1/crates/${crate}/versions" \
+    | jq -e --arg version "$version" '.versions[] | select(.num == $version and (.yanked | not))' >/dev/null
+}
 
-echo "Publishing dkdc-bookmarks-app to crates.io..."
-cargo publish -p dkdc-bookmarks-app
+wait_for_crate_version() {
+  local crate="$1"
+  for _ in {1..12}; do
+    if crate_version_exists "$crate"; then
+      return 0
+    fi
+    sleep 10
+  done
+  echo "${crate} ${version} was not visible on crates.io after publishing" >&2
+  return 1
+}
 
-echo "Publishing dkdc-bookmarks to crates.io..."
-cargo publish -p dkdc-bookmarks
+publish_crate() {
+  local crate="$1"
+  if crate_version_exists "$crate"; then
+    echo "${crate} ${version} already exists on crates.io, skipping publish"
+  else
+    echo "Publishing ${crate} ${version} to crates.io..."
+    cargo publish -p "$crate"
+  fi
+  wait_for_crate_version "$crate"
+}
+
+publish_crate dkdc-bookmarks-core
+publish_crate dkdc-bookmarks-webapp
+publish_crate dkdc-bookmarks-app
+publish_crate dkdc-bookmarks
 
 echo "Published!"

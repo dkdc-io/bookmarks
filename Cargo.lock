@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -755,7 +755,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-app"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "dkdc-bookmarks-core",
@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "dirs",
@@ -779,7 +779,7 @@ dependencies = [
 
 [[package]]
 name = "dkdc-bookmarks-webapp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "axum",

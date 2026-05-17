@@ -1,5 +1,4 @@
 target/
-crates/bookmarks-app/gen/
 *.pyc
 __pycache__/
 *.so
