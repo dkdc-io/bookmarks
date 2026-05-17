@@ -6,7 +6,7 @@ version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | se
 
 crate_version_exists() {
   local crate="$1"
-  curl -fsSL "https://crates.io/api/v1/crates/${crate}/versions" \
+  curl -fsSL -H "User-Agent: dkdc-bookmarks-release" "https://crates.io/api/v1/crates/${crate}/versions" \
     | jq -e --arg version "$version" '.versions[] | select(.num == $version and (.yanked | not))' >/dev/null
 }
 
