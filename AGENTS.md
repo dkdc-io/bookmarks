@@ -28,11 +28,11 @@ crates/bookmarks-core/    # Core library (config, storage, open, strings)
   src/toml_storage.rs     # TOML file storage implementation
   src/open.rs             # URL resolution (name/alias → URL) and opening
   src/strings.rs          # Shared string constants and error templates
-crates/bookmarks-app/     # iced desktop app
-  src/lib.rs              # Desktop UI (depends on bookmarks-core)
+crates/bookmarks-app/     # Tauri desktop shell around bookmarks-webapp
+  src/lib.rs              # Starts loopback webapp and opens the Tauri window
   assets/icon.png         # App window icon
-crates/bookmarks-webapp/  # Axum HTMX webapp (port 1414)
-  src/lib.rs              # Web UI (depends on bookmarks-core)
+crates/bookmarks-webapp/  # Axum local webapp (default port 1414)
+  src/lib.rs              # Web UI and reusable local server (depends on bookmarks-core)
 crates/bookmarks-cli/     # CLI binary (dkdc-bookmarks on crates.io)
   src/main.rs             # Binary entry point
   src/lib.rs              # Re-exports core + run_cli
@@ -41,7 +41,7 @@ crates/bookmarks-py/      # PyO3 bindings (cdylib)
 py/bookmarks/             # Python wrapper + type stubs (core.pyi, py.typed)
 ```
 
-Feature flags on `bookmarks-cli`: `app` (pulls in bookmarks-app), `webapp` (pulls in bookmarks-webapp).
+Feature flags on `bookmarks-cli`: `app` (pulls in bookmarks-app and webapp), `webapp` (pulls in bookmarks-webapp).
 
 Config resolution: `-f` flag > `-l` (local, auto-create) > `./bookmarks.toml` (cwd, must exist) > `~/.config/bookmarks/bookmarks.toml` (global, auto-created).
 

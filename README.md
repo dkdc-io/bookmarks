@@ -74,7 +74,7 @@ socials = ["gh", "linkedin"]
 
 URLs can be plain strings, inline tables with aliases, or expanded tables. Groups reference url names or aliases.
 
-Use the `--config` or `--app` or `--webapp` option to edit the configuration file.
+Use `--config` to edit the configuration file in `$EDITOR`, or use `--app` / `--webapp` for the local GUI.
 
 ### Open urls
 
@@ -98,7 +98,7 @@ Available options:
 | `--global` | `-g` | Use global config, ignore local bookmarks.toml |
 | `--local` | `-l` | Use local config (`./bookmarks.toml`), create if missing |
 | `--config` | `-c` | Open active bookmarks file in `$EDITOR` (use `-gc` for global) |
-| `--app` | `-a` | Open desktop app (requires `app` feature) |
+| `--app` | `-a` | Open Tauri desktop app (requires `app` feature, which includes `webapp`) |
 | `--webapp` | `-w` | Open the web app in browser (requires `webapp` feature) |
 | `--help` | `-h` | Print help |
 | `--version` | `-V` | Print version |

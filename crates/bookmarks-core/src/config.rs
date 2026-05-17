@@ -75,6 +75,26 @@ impl UrlEntry {
     pub fn has_alias(&self, alias: &str) -> bool {
         self.aliases().iter().any(|a| a == alias)
     }
+
+    pub fn set_aliases(&mut self, new_aliases: Vec<String>) {
+        match self {
+            UrlEntry::Simple(url) => {
+                if !new_aliases.is_empty() {
+                    *self = UrlEntry::Full {
+                        url: url.clone(),
+                        aliases: new_aliases,
+                    };
+                }
+            }
+            UrlEntry::Full { url, aliases } => {
+                if new_aliases.is_empty() {
+                    *self = UrlEntry::Simple(url.clone());
+                } else {
+                    *aliases = new_aliases;
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -130,6 +150,63 @@ impl Config {
     /// Check if a name is a known url name or alias.
     pub fn contains(&self, name: &str) -> bool {
         self.resolve(name).is_some()
+    }
+
+    pub fn parse_list(raw: &str) -> Vec<String> {
+        raw.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    pub fn upsert_url(&mut self, name: String, url: String) {
+        self.urls.insert(name, UrlEntry::Simple(url));
+    }
+
+    pub fn set_url_value(&mut self, name: &str, url: String) -> Result<()> {
+        let entry = self
+            .urls
+            .get_mut(name)
+            .with_context(|| format!("url '{name}' not found"))?;
+        entry.set_url(url);
+        Ok(())
+    }
+
+    pub fn set_url_aliases(&mut self, name: &str, aliases: Vec<String>) -> Result<()> {
+        let entry = self
+            .urls
+            .get_mut(name)
+            .with_context(|| format!("url '{name}' not found"))?;
+        entry.set_aliases(aliases);
+        Ok(())
+    }
+
+    pub fn validate_group_entries(&self, entries: &[String]) -> Result<()> {
+        let missing: Vec<&str> = entries
+            .iter()
+            .filter(|e| !self.contains(e))
+            .map(String::as_str)
+            .collect();
+        if !missing.is_empty() {
+            anyhow::bail!(crate::strings::err_group_entries_missing(&missing));
+        }
+        Ok(())
+    }
+
+    pub fn upsert_group(&mut self, name: String, entries: Vec<String>) -> Result<()> {
+        self.validate_group_entries(&entries)?;
+        self.groups.insert(name, entries);
+        Ok(())
+    }
+
+    pub fn set_group_entries(&mut self, name: &str, entries: Vec<String>) -> Result<()> {
+        self.validate_group_entries(&entries)?;
+        let existing = self
+            .groups
+            .get_mut(name)
+            .with_context(|| format!("group '{name}' not found"))?;
+        *existing = entries;
+        Ok(())
     }
 
     pub fn validate(&self) -> Vec<String> {

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default bookmarks desktop app capability.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
