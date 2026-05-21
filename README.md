@@ -8,6 +8,41 @@
 
 Bookmarks in your filesystem.
 
+```text
+bookmarks.toml
+(filesystem config)
+       |
+       v
+bookmarks-core
+(config + storage + open)
+       |
+       +--> bookmarks CLI
+       |       +--> opens names, aliases, groups
+       |       +--> --webapp starts Axum webapp
+       |       +--> --app starts Tauri desktop app
+       |
+       +--> dkdc-bookmarks Python package
+       |
+       +--> bookmarks-webapp
+       |    (Axum UI/routes on localhost:1414)
+       |
+       +--> bookmarks-app
+            (Tauri shell)
+              |
+              v
+       127.0.0.1:0 loopback webapp
+              |
+              v
+       Tauri WebView
+              |
+              +--> local app routes stay in the WebView
+              +--> bookmark URLs open in the OS/browser
+```
+
+![Bookmarks web and desktop application](https://raw.githubusercontent.com/dkdc-io/bookmarks/main/assets/bookmarks-webapp.png)
+
+_Web & desktop application._
+
 ## Install
 
 Recommended:
