@@ -21,8 +21,6 @@ bookmarks-core
        |       +--> --webapp starts Axum webapp
        |       +--> --app starts Tauri desktop app
        |
-       +--> dkdc-bookmarks Python package
-       |
        +--> bookmarks-webapp
        |    (Axum UI/routes on localhost:1414)
        |
@@ -38,6 +36,8 @@ bookmarks-core
               +--> local app routes stay in the WebView
               +--> bookmark URLs open in the OS/browser
 ```
+
+Screenshot of the web/desktop app:
 
 ![Bookmarks web and desktop application](https://raw.githubusercontent.com/dkdc-io/bookmarks/main/assets/bookmarks-webapp.png)
 
